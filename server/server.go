@@ -26,8 +26,9 @@ func Serve(opts *Options) error {
 				"password", string(pass),
 				"remote", c.RemoteAddr().String(),
 				"client", string(c.ClientVersion()),
+				"outcome", "accepted",
 			)
-			return nil, ssh.ErrNoAuth
+			return nil, nil
 		},
 	}
 	cfg.AddHostKey(opts.Signer)

@@ -43,13 +43,70 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 	}
 }
 
-// handleChannel rejects all requests on an accepted channel.
+// ptyReq matches RFC 4254 §6.2.
+type ptyReq struct {
+	Term     string
+	Cols     uint32
+	Rows     uint32
+	WidthPx  uint32
+	HeightPx uint32
+	Modes    string
+}
+
+type execReq struct{ Command string }
+type envReq struct{ Name, Value string }
+type subsystemReq struct{ Name string }
+
+// handleChannel logs each request on an accepted channel and rejects it.
 func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
 	defer ch.Close()
 	for req := range reqs {
-		log.Info("channel request", "type", req.Type)
+		logRequest(req, log)
 		if req.WantReply {
 			req.Reply(false, nil)
 		}
+	}
+}
+
+// logRequest parses known request payloads and logs structured fields.
+func logRequest(req *ssh.Request, log *slog.Logger) {
+	switch req.Type {
+	case "pty-req":
+		var p ptyReq
+		if err := ssh.Unmarshal(req.Payload, &p); err != nil {
+			log.Info("channel request", "type", req.Type, "parse_err", err)
+			return
+		}
+		log.Info("channel request",
+			"type", req.Type,
+			"term", p.Term,
+			"cols", p.Cols,
+			"rows", p.Rows,
+		)
+	case "exec":
+		var p execReq
+		if err := ssh.Unmarshal(req.Payload, &p); err != nil {
+			log.Info("channel request", "type", req.Type, "parse_err", err)
+			return
+		}
+		log.Info("channel request", "type", req.Type, "command", p.Command)
+	case "env":
+		var p envReq
+		if err := ssh.Unmarshal(req.Payload, &p); err != nil {
+			log.Info("channel request", "type", req.Type, "parse_err", err)
+			return
+		}
+		log.Info("channel request", "type", req.Type, "name", p.Name, "value", p.Value)
+	case "subsystem":
+		var p subsystemReq
+		if err := ssh.Unmarshal(req.Payload, &p); err != nil {
+			log.Info("channel request", "type", req.Type, "parse_err", err)
+			return
+		}
+		log.Info("channel request", "type", req.Type, "name", p.Name)
+	case "shell":
+		log.Info("channel request", "type", req.Type)
+	default:
+		log.Info("channel request", "type", req.Type, "payload_len", len(req.Payload))
 	}
 }
