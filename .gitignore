@@ -1,0 +1,5 @@
+ssh-honeypot
+*.log
+host_key*
+*.env
+.idea/
