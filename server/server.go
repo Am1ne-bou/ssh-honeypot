@@ -11,16 +11,18 @@ import (
 
 // Options configures the SSH honeypot server.
 type Options struct {
-	Addr   string
-	Signer ssh.Signer
-	Logger *slog.Logger
+	Addr    string
+	Signer  ssh.Signer
+	Auth    *slog.Logger
+	Session *slog.Logger
+	Server  *slog.Logger
 }
 
 // Serve listens on opts.Addr and handles each SSH connection.
 func Serve(opts *Options) error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			opts.Logger.Info("auth attempt",
+			opts.Auth.Info("auth attempt",
 				"method", "password",
 				"user", c.User(),
 				"password", string(pass),
@@ -39,14 +41,14 @@ func Serve(opts *Options) error {
 	}
 	defer ln.Close()
 
-	opts.Logger.Info("listening", "addr", opts.Addr)
+	opts.Server.Info("listening", "addr", opts.Addr)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			opts.Logger.Error("accept failed", "err", err)
+			opts.Server.Error("accept failed", "err", err)
 			continue
 		}
-		go session.Handle(conn, cfg, opts.Logger)
+		go session.Handle(conn, cfg, opts.Session)
 	}
 }
