@@ -51,8 +51,7 @@ func runShell(ch ssh.Channel, log *slog.Logger) {
 				ch.SendRequest("exit-status", false, status)
 				return
 			}
-
-			out := dispatch(cmd)
+			out, _ := dispatch(cmd)
 			out = strings.ReplaceAll(out, "\n", "\r\n")
 			if _, err := ch.Write([]byte(out)); err != nil {
 				return

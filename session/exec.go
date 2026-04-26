@@ -11,14 +11,14 @@ import (
 func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 	defer ch.Close()
 
-	out := dispatch(cmd)
+	out, exit := dispatch(cmd)
 	if _, err := ch.Write([]byte(out)); err != nil {
 		log.Error("exec write failed", "err", err)
 		return
 	}
 
 	status := make([]byte, 4)
-	binary.BigEndian.PutUint32(status, 0)
+	binary.BigEndian.PutUint32(status, exit)
 	if _, err := ch.SendRequest("exit-status", false, status); err != nil {
 		log.Error("exit-status send failed", "err", err)
 	}
