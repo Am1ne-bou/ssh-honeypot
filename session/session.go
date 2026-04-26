@@ -57,9 +57,47 @@ type execReq struct{ Command string }
 type envReq struct{ Name, Value string }
 type subsystemReq struct{ Name string }
 
-// handleChannel logs each request on an accepted channel and rejects it.
+// handleChannel routes channel requests; shell/exec take ownership of ch.
 func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
-	defer ch.Close()
+	for req := range reqs {
+		logRequest(req, log)
+		switch req.Type {
+		case "shell":
+			if req.WantReply {
+				req.Reply(true, nil)
+			}
+			go drainRequests(reqs, log)
+			runShell(ch, log)
+			return
+		case "exec":
+			var p execReq
+			if err := ssh.Unmarshal(req.Payload, &p); err != nil {
+				if req.WantReply {
+					req.Reply(false, nil)
+				}
+				continue
+			}
+			if req.WantReply {
+				req.Reply(true, nil)
+			}
+			go drainRequests(reqs, log)
+			runExec(ch, p.Command, log)
+			return
+		case "pty-req", "env":
+			if req.WantReply {
+				req.Reply(true, nil)
+			}
+		default:
+			if req.WantReply {
+				req.Reply(false, nil)
+			}
+		}
+	}
+	ch.Close()
+}
+
+// drainRequests logs and rejects post-shell/exec requests until the stream closes.
+func drainRequests(reqs <-chan *ssh.Request, log *slog.Logger) {
 	for req := range reqs {
 		logRequest(req, log)
 		if req.WantReply {
