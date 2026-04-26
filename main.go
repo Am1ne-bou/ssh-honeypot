@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/Am1ne-bou/ssh-honeypot/config"
@@ -11,22 +12,29 @@ import (
 
 func main() {
 	cfg := config.Parse()
-	log := logger.New(os.Stderr)
+	logs, err := logger.New(cfg.LogDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "logger init:", err)
+		os.Exit(1)
+	}
+	defer logs.Close()
 
 	signer, err := hostkey.Generate()
 	if err != nil {
-		log.Error("host key generation failed", "err", err)
+		logs.Server.Error("host key generation failed", "err", err)
 		os.Exit(1)
 	}
 
 	opts := &server.Options{
-		Addr:   cfg.Addr,
-		Signer: signer,
-		Logger: log,
+		Addr:    cfg.Addr,
+		Signer:  signer,
+		Auth:    logs.Auth,
+		Session: logs.Session,
+		Server:  logs.Server,
 	}
 
 	if err := server.Serve(opts); err != nil {
-		log.Error("server failed", "err", err)
+		logs.Server.Error("server failed", "err", err)
 		os.Exit(1)
 	}
 }

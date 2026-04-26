@@ -3,3 +3,4 @@ ssh-honeypot
 host_key*
 *.env
 .idea/
+ssh-honeypot
