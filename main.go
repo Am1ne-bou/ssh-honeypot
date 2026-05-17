@@ -19,14 +19,15 @@ func main() {
 	}
 	defer logs.Close()
 
-	signer, err := hostkey.Generate()
+	signer, err := hostkey.LoadOrGenerate(cfg.KeyFile)
 	if err != nil {
-		logs.Server.Error("host key generation failed", "err", err)
+		logs.Server.Error("host key failed", "err", err)
 		os.Exit(1)
 	}
 
 	opts := &server.Options{
 		Addr:    cfg.Addr,
+		MaxConn: cfg.MaxConn,
 		Signer:  signer,
 		Auth:    logs.Auth,
 		Session: logs.Session,

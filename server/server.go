@@ -12,6 +12,7 @@ import (
 // Options configures the SSH honeypot server.
 type Options struct {
 	Addr    string
+	MaxConn int
 	Signer  ssh.Signer
 	Auth    *slog.Logger
 	Session *slog.Logger
