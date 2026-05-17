@@ -44,12 +44,22 @@ func Serve(opts *Options) error {
 
 	opts.Server.Info("listening", "addr", opts.Addr)
 
+	sem := make(chan struct{}, opts.MaxConn)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			opts.Server.Error("accept failed", "err", err)
 			continue
 		}
-		go session.Handle(conn, cfg, opts.Session)
+		select {
+		case sem <- struct{}{}:
+			go func() {
+				defer func() { <-sem }()
+				session.Handle(conn, cfg, opts.Session)
+			}()
+		default:
+			opts.Server.Info("connection rejected", "remote", conn.RemoteAddr().String(), "reason", "max_conn")
+			conn.Close()
+		}
 	}
 }
