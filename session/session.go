@@ -1,15 +1,26 @@
 package session
 
 import (
+	"crypto/rand"
+	"fmt"
 	"log/slog"
 	"net"
 
 	"golang.org/x/crypto/ssh"
 )
 
+// newSID returns a random 12-hex-char session identifier.
+func newSID() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
 // Handle performs the SSH handshake and manages the resulting session.
 func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 	defer conn.Close()
+
+	log = log.With("sid", newSID())
 
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {

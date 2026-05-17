@@ -11,6 +11,7 @@ import (
 func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 	defer ch.Close()
 
+	log.Info("exec", "command", cmd)
 	out, exit := dispatch(cmd)
 	if _, err := ch.Write([]byte(out)); err != nil {
 		log.Error("exec write failed", "err", err)
