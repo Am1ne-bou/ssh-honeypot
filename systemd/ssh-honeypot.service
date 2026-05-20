@@ -1,0 +1,16 @@
+[Unit]
+Description=ssh honeypot
+After=network.target
+
+[Service]
+User=honeypot
+ExecStart=/usr/local/bin/ssh-honeypot -addr :2222 -keyfile /var/lib/honeypot/host.key -logdir /var/lib/honeypot/logs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/honeypot
+StateDirectory=honeypot
+
+[Install]
+WantedBy=multi-user.target
