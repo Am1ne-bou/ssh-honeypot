@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -30,6 +31,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 		)
 		return
 	}
+	conn.SetReadDeadline(time.Time{}) // clear the 30s handshake deadline
 	defer sconn.Close()
 
 	log.Info("handshake ok",

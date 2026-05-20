@@ -3,6 +3,7 @@ package server
 import (
 	"log/slog"
 	"net"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -55,6 +56,7 @@ func Serve(opts *Options) error {
 		case sem <- struct{}{}:
 			go func() {
 				defer func() { <-sem }()
+				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 				session.Handle(conn, cfg, opts.Session)
 			}()
 		default:
