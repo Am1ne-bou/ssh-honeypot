@@ -1,6 +1,8 @@
 ssh-honeypot
 *.log
 host_key*
+host.key
 *.env
 .idea/
-ssh-honeypot
+logs/
+*Zone.Identifier
