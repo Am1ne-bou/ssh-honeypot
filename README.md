@@ -82,3 +82,31 @@ Three JSON log files in the log directory:
 ```
 
 `server.log` -- startup, errors, connection rejections.
+
+---
+
+## Port strategy
+
+The honeypot listens on `:2222`. Real sshd moves to a non-standard port
+(e.g. VPS_PORT). An iptables PREROUTING rule redirects port 22 traffic to 2222
+so attackers see port 22 and don't know it's a honeypot.
+
+Don't skip the "verify sshd on new port before continuing" step in the
+deploy instructions. Locking yourself out of a VPS is not fun.
+
+---
+
+## Limitations
+
+This is a low-interaction honeypot -- the shell is fake.
+
+- No pipe support (`ls | grep foo` is parsed as one command, pipes are
+  passed as literal characters)
+- No variable expansion (`$PATH`, `$(cmd)` not interpreted)
+- No file system state -- `touch foo` works but `ls` won't show foo
+- Fixed hostname and fake system info (uname, /etc/os-release)
+- No network commands actually work (wget, curl return canned output)
+
+These limitations are intentional for now. The goal is to log what
+attackers try, not to fool a human. Automated attack scripts don't
+usually check if their commands actually worked before moving on.
