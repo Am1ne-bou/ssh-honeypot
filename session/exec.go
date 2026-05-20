@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/binary"
 	"log/slog"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -10,6 +11,20 @@ import (
 // runExec executes a one-shot command, writes canned output, sends exit-status, closes.
 func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 	defer ch.Close()
+
+	// kill exec sessions that stall on Write -- client stops reading
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		t := time.NewTimer(2 * time.Minute)
+		defer t.Stop()
+		select {
+		case <-t.C:
+			log.Info("exec", "event", "write_timeout")
+			ch.Close()
+		case <-stop:
+		}
+	}()
 
 	log.Info("exec", "command", cmd)
 	out, exit := dispatch(cmd)
