@@ -1,0 +1,14 @@
+/var/lib/honeypot/logs/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # copytruncate: copy then truncate the original instead of renaming it.
+    # needed because slog holds the fd open -- a rename would mean we keep
+    # writing to the old inode. proper fix is a SIGHUP handler that reopens
+    # files, but copytruncate is fine for a honeypot where the race window
+    # (copy vs truncate) is under a millisecond and losing one log line is ok.
+    copytruncate
+}

@@ -1,4 +1,4 @@
-ssh-honeypot
+/ssh-honeypot
 *.log
 host_key*
 host.key
