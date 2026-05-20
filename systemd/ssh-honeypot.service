@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 User=honeypot
-ExecStart=/usr/local/bin/ssh-honeypot -addr :2222 -keyfile /var/lib/honeypot/host.key -logdir /var/lib/honeypot/logs
+ExecStart=/usr/local/bin/ssh-honeypot -addr :2222 -host-key /var/lib/honeypot/host.key -log-dir /var/lib/honeypot/logs
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
