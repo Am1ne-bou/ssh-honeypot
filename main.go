@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/Am1ne-bou/ssh-honeypot/config"
 	"github.com/Am1ne-bou/ssh-honeypot/hostkey"
@@ -25,6 +28,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	opts := &server.Options{
 		Addr:    cfg.Addr,
 		MaxConn: cfg.MaxConn,
@@ -34,8 +40,8 @@ func main() {
 		Server:  logs.Server,
 	}
 
-	if err := server.Serve(opts); err != nil {
+	if err := server.Serve(ctx, opts); err != nil {
 		logs.Server.Error("server failed", "err", err)
-		os.Exit(1)
+		return
 	}
 }

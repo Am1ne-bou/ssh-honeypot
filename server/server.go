@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"time"
@@ -21,7 +22,7 @@ type Options struct {
 }
 
 // Serve listens on opts.Addr and handles each SSH connection.
-func Serve(opts *Options) error {
+func Serve(ctx context.Context, opts *Options) error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 			opts.Auth.Info("auth attempt",
