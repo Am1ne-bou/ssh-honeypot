@@ -46,10 +46,18 @@ func Serve(ctx context.Context, opts *Options) error {
 
 	opts.Server.Info("listening", "addr", opts.Addr)
 
+	go func() {
+		<-ctx.Done()
+		ln.Close()
+	}()
+
 	sem := make(chan struct{}, opts.MaxConn)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			opts.Server.Error("accept failed", "err", err)
 			continue
 		}

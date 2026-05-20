@@ -47,6 +47,9 @@ func New(dir string) (*Loggers, error) {
 func (l *Loggers) Close() error {
 	var first error
 	for _, f := range l.files {
+		if err := f.Sync(); err != nil && first == nil {
+			first = err
+		}
 		if err := f.Close(); err != nil && first == nil {
 			first = err
 		}
