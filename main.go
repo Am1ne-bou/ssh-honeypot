@@ -25,7 +25,7 @@ func main() {
 	signer, err := hostkey.LoadOrGenerate(cfg.KeyFile)
 	if err != nil {
 		logs.Server.Error("host key failed", "err", err)
-		os.Exit(1)
+		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
