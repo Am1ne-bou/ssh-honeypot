@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -14,6 +15,22 @@ const prompt = "root@ubuntu:~# "
 // runShell serves a fake interactive shell on ch with manual echo and line editing.
 func runShell(ch ssh.Channel, log *slog.Logger) {
 	defer ch.Close()
+
+	// kill idle sessions -- bots that connect and do nothing still hold a goroutine
+	idle := time.NewTimer(5 * time.Minute)
+	stop := make(chan struct{})
+	go func() {
+		select {
+		case <-idle.C:
+			log.Info("shell", "event", "idle_timeout")
+			ch.Close()
+		case <-stop:
+		}
+	}()
+	defer func() {
+		idle.Stop()
+		close(stop)
+	}()
 
 	if _, err := ch.Write([]byte(prompt)); err != nil {
 		return
@@ -33,6 +50,7 @@ func runShell(ch ssh.Channel, log *slog.Logger) {
 		if n == 0 {
 			continue
 		}
+		idle.Reset(5 * time.Minute)
 
 		b := one[0]
 
