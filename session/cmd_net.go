@@ -27,7 +27,6 @@ func (ifconfigCmd) Run(_ []string) (string, uint32) {
 		"        loop  txqueuelen 1000  (Local Loopback)\n", 0
 }
 
-// ipCmd dispatches on the iproute2 subcommand (a, addr, r, route, link).
 type ipCmd struct{}
 
 func (ipCmd) Run(args []string) (string, uint32) {
@@ -85,7 +84,6 @@ func (arpCmd) Run(_ []string) (string, uint32) {
 	return "? (10.0.0.1) at 52:54:00:12:34:56 [ether] on eth0\n", 0
 }
 
-// pingCmd fakes a successful single-host reply; ignores -c, -W, etc.
 type pingCmd struct{}
 
 func (pingCmd) Run(args []string) (string, uint32) {
@@ -104,9 +102,8 @@ func (pingCmd) Run(args []string) (string, uint32) {
 		"rtt min/avg/max/mdev = 11.800/12.050/12.300/0.250 ms\n", 0
 }
 
-// curlCmd / wgetCmd are bait — attackers chain them to drop payloads.
-// Logging happens in shell.go via the "shell" log line; we just return
-// realistic "connection refused" so retries are quick.
+// curl/wget are the bait. attackers chain `curl X | sh` to drop a payload.
+// the command is already logged from the shell loop; just refuse fast.
 type curlCmd struct{}
 
 func (curlCmd) Run(args []string) (string, uint32) {

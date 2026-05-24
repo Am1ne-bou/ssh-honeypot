@@ -9,7 +9,6 @@ type Config struct {
 	MaxConn int
 }
 
-// Parse reads command-line flags and returns a Config.
 func Parse() *Config {
 	c := &Config{}
 	flag.StringVar(&c.Addr, "addr", ":2222", "listen address")

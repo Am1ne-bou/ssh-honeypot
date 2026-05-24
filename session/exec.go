@@ -8,11 +8,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// runExec executes a one-shot command, writes canned output, sends exit-status, closes.
 func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 	defer ch.Close()
 
-	// kill exec sessions that stall on Write -- client stops reading
+	// if the client opens then stops reading, our Write blocks forever. 2min cap.
 	stop := make(chan struct{})
 	defer close(stop)
 	go func() {

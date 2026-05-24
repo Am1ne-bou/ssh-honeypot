@@ -12,11 +12,10 @@ import (
 
 const prompt = "root@ubuntu:~# "
 
-// runShell serves a fake interactive shell on ch with manual echo and line editing.
 func runShell(ch ssh.Channel, log *slog.Logger) {
 	defer ch.Close()
 
-	// kill idle sessions -- bots that connect and do nothing still hold a goroutine
+	// bots that connect and just sit there hold a goroutine forever -- drop after 5min idle
 	idle := time.NewTimer(5 * time.Minute)
 	stop := make(chan struct{})
 	go func() {

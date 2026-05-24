@@ -12,7 +12,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// LoadOrGenerate loads an ed25519 host key from path, or generates and saves one if absent.
+// load existing key if present, else generate + persist.
+// scanners fingerprint by host key, so we want it stable across restarts.
 func LoadOrGenerate(path string) (ssh.Signer, error) {
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

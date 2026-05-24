@@ -30,12 +30,10 @@ func init() {
 	register("systemctl", systemctlCmd{})
 }
 
-// noopCmd silently succeeds. Used for state-changing commands we fake away.
 type noopCmd struct{}
 
 func (noopCmd) Run(_ []string) (string, uint32) { return "", 0 }
 
-// sudoCmd handles `sudo -l` and `sudo <cmd>` by re-dispatching <cmd>.
 type sudoCmd struct{}
 
 func (sudoCmd) Run(args []string) (string, uint32) {
@@ -52,7 +50,7 @@ func (sudoCmd) Run(args []string) (string, uint32) {
 	if args[0] == "-v" || args[0] == "-V" {
 		return "Sudo version 1.9.15p5\nSudoers policy plugin version 1.9.15p5\nSudoers file grammar version 50\n", 0
 	}
-	// Strip leading flags then re-dispatch as if executed without sudo.
+	// drop leading flags, then run the rest as if there was no sudo
 	rest := args
 	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
 		rest = rest[1:]
@@ -66,11 +64,10 @@ func (sudoCmd) Run(args []string) (string, uint32) {
 type suCmd struct{}
 
 func (suCmd) Run(_ []string) (string, uint32) {
-	// Already root — su to root from root is a no-op shell.
+	// already root, su to root is a noop
 	return "", 0
 }
 
-// aptCmd fakes the most common subcommands cleanly.
 type aptCmd struct{}
 
 func (aptCmd) Run(args []string) (string, uint32) {
@@ -98,7 +95,6 @@ func (aptCmd) Run(args []string) (string, uint32) {
 	return "E: Invalid operation " + args[0] + "\n", 100
 }
 
-// whichCmd reports common binaries as present, anything else as absent.
 type whichCmd struct{}
 
 var fakeBinaries = map[string]string{
@@ -146,8 +142,7 @@ func (whereisCmd) Run(args []string) (string, uint32) {
 type findCmd struct{}
 
 func (findCmd) Run(_ []string) (string, uint32) {
-	// Simplest realistic behavior: empty result, exit 0. Real find with no
-	// match returns 0; we don't simulate path traversal.
+	// real find with no match exits 0, so do the same
 	return "", 0
 }
 
@@ -157,7 +152,7 @@ func (passwdCmd) Run(_ []string) (string, uint32) {
 	return "Changing password for root.\nCurrent password: \n", 1
 }
 
-// sshCmd fakes outbound ssh — refuse fast so attacker logs and moves on.
+// fail fast on outbound ssh so the attacker bails quickly
 type sshCmd struct{}
 
 func (sshCmd) Run(args []string) (string, uint32) {

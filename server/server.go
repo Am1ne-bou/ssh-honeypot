@@ -11,7 +11,6 @@ import (
 	"github.com/Am1ne-bou/ssh-honeypot/session"
 )
 
-// Options configures the SSH honeypot server.
 type Options struct {
 	Addr    string
 	MaxConn int
@@ -21,7 +20,6 @@ type Options struct {
 	Server  *slog.Logger
 }
 
-// Serve listens on opts.Addr and handles each SSH connection.
 func Serve(ctx context.Context, opts *Options) error {
 	cfg := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
@@ -65,6 +63,8 @@ func Serve(ctx context.Context, opts *Options) error {
 		case sem <- struct{}{}:
 			go func() {
 				defer func() { <-sem }()
+				// 30s handshake deadline -- slowloris-style attackers open
+				// the TCP socket then never finish KEX. cleared inside Handle.
 				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 				session.Handle(conn, cfg, opts.Session)
 			}()

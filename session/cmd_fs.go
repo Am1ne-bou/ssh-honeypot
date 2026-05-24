@@ -11,7 +11,6 @@ func init() {
 	register("history", staticCmd{out: ""})
 }
 
-// lsCmd handles `ls`, `ls -l`, `ls -la`/`-al`, and `ls /`.
 type lsCmd struct{}
 
 func (lsCmd) Run(args []string) (string, uint32) {
@@ -47,7 +46,6 @@ func (lsCmd) Run(args []string) (string, uint32) {
 	return "\n", 0
 }
 
-// splitArgs separates flag tokens (-x, --foo) from positional args.
 func splitArgs(args []string) (flags, rest []string) {
 	for _, a := range args {
 		if len(a) > 0 && a[0] == '-' {
@@ -59,7 +57,6 @@ func splitArgs(args []string) (flags, rest []string) {
 	return
 }
 
-// containsFlag returns true if any flag token contains the short letter c.
 func containsFlag(flags []string, c byte) bool {
 	for _, f := range flags {
 		for i := 1; i < len(f); i++ {
@@ -71,7 +68,6 @@ func containsFlag(flags []string, c byte) bool {
 	return false
 }
 
-// catCmd serves a small set of fake files; everything else is "No such file".
 type catCmd struct{}
 
 var fakeFiles = map[string]string{

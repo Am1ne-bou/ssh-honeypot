@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 )
 
-// Loggers groups the three per-stream loggers and the files backing them.
 type Loggers struct {
 	Auth    *slog.Logger
 	Session *slog.Logger
@@ -15,7 +14,6 @@ type Loggers struct {
 	files   []*os.File
 }
 
-// New opens dir/{auth,session,server}.log and returns a Loggers writing JSON to each.
 func New(dir string) (*Loggers, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dir, err)
@@ -43,15 +41,15 @@ func New(dir string) (*Loggers, error) {
 	return l, nil
 }
 
-// Close flushes and closes all backing files.
 func (l *Loggers) Close() error {
 	var first error
 	for _, f := range l.files {
-		if err := f.Sync(); err != nil && first == nil {
-			first = err
+		// fsync before close so the last batch of logs hits disk on SIGTERM
+		if e := f.Sync(); e != nil && first == nil {
+			first = e
 		}
-		if err := f.Close(); err != nil && first == nil {
-			first = err
+		if e := f.Close(); e != nil && first == nil {
+			first = e
 		}
 	}
 	return first

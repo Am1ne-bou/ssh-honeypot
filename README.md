@@ -1,112 +1,78 @@
 # ssh-honeypot
 
-Low-interaction SSH honeypot written in Go. Accepts all password auth,
-serves a fake shell, logs everything to JSON. Meant to run on a public VPS
-and collect real attack data.
+Low-interaction SSH honeypot in Go. Accepts any password, drops attackers into
+a fake shell, logs everything as JSON. Built to sit on a public VPS port 22
+and collect attack data.
 
----
+## build
 
-## Build
+`make build` -- produces a static linux binary. Needs Go 1.21+. The Makefile
+sets `CGO_ENABLED=0 GOOS=linux` so you can cross-compile from anywhere.
 
-Requires Go 1.21+.
+## deploy
 
-```bash
-make build
-# produces a static linux binary: ./ssh-honeypot
+Move real sshd to a different port first (`Port VPS_PORT` in
+`/etc/ssh/sshd_config`), restart, **open a new terminal and verify you can
+still ssh on the new port** before doing anything else.
+
+Then redirect 22 -> 2222 in iptables:
+
+```
+iptables -t nat -A PREROUTING -p tcp --dport 22 -j REDIRECT --to-port 2222
+iptables-save > /etc/iptables/rules.v4
 ```
 
-Cross-compile from any OS -- the Makefile sets `CGO_ENABLED=0 GOOS=linux`
-so the binary runs on the VPS without any C dependencies.
+Service user + dirs:
 
----
-
-## Deploy
-
-```bash
-# on VPS as root -- create a dedicated user with no login shell
+```
 useradd -r -s /sbin/nologin -d /var/lib/honeypot honeypot
 mkdir -p /var/lib/honeypot/logs
 chown -R honeypot:honeypot /var/lib/honeypot
-chmod 700 /var/lib/honeypot
-
-# move real sshd off port 22 first
-# edit /etc/ssh/sshd_config -> Port VPS_PORT
-# systemctl restart sshd
-# open a new terminal and verify you can still ssh on VPS_PORT before continuing
-
-# redirect port 22 to honeypot on 2222
-iptables -t nat -A PREROUTING -p tcp --dport 22 -j REDIRECT --to-port 2222
-# persist across reboots
-iptables-save > /etc/iptables/rules.v4
-
-# copy files
-scp ssh-honeypot root@vps:/usr/local/bin/
-scp systemd/ssh-honeypot.service root@vps:/etc/systemd/system/
-
-# on the VPS
-make install   # or do the scp manually then:
-systemctl daemon-reload
-systemctl enable --now ssh-honeypot
-systemctl status ssh-honeypot
 ```
 
----
+Copy binary + systemd unit, `systemctl enable --now ssh-honeypot`.
 
-## Flags
+## flags
 
 ```
 -addr      listen address (default :2222)
--host-key  path to ed25519 host key file (default ./host.key)
--log-dir   directory for log files (default ./logs)
--max-conn  max concurrent SSH connections (default 100)
+-host-key  ed25519 host key file (default ./host.key)
+-log-dir   log file directory (default ./logs)
+-max-conn  concurrent connection cap (default 100)
 ```
 
-The host key is generated on first run and persisted. Keeping it stable
-means scanners that fingerprint by host key will recognise the honeypot
-across restarts.
+Host key is generated on first run and reused after. Keeping it stable matters
+because scanners fingerprint by host key -- a key that changes every restart
+is a tell.
 
----
+## logs
 
-## Log format
+Three JSON files in `-log-dir`:
 
-Three JSON log files in the log directory:
+- `auth.log` -- every login attempt (user, password, remote IP, client banner)
+- `session.log` -- handshakes, channel requests, commands typed in the fake shell
+- `server.log` -- startup, accept errors, rejected connections
 
-`auth.log` -- every login attempt:
-```json
-{"time":"2024-01-15T03:42:11Z","level":"INFO","msg":"auth attempt","method":"password","user":"root","password":"123456","remote":"185.220.101.47:54321","client":"SSH-2.0-libssh_0.9.6","outcome":"accepted"}
+example:
+
+```
+{"time":"...","level":"INFO","msg":"auth attempt","method":"password","user":"root","password":"123456","remote":"185.220.101.47:54321","client":"SSH-2.0-libssh_0.9.6","outcome":"accepted"}
 ```
 
-`session.log` -- handshakes, channel requests, commands typed:
-```json
-{"time":"2024-01-15T03:42:12Z","level":"INFO","msg":"shell","sid":"a3f9b2","command":"cat /etc/passwd"}
-```
+## limitations
 
-`server.log` -- startup, errors, connection rejections.
+Fake shell. Don't expect it to fool a person.
 
----
+- pipes not interpreted (`ls | grep x` -- the LHS runs, pipe is in the log)
+- no `$(cmd)`, only `$VAR`
+- no fs state -- `touch foo` "succeeds" but `ls` won't show it
+- network commands (curl, wget, ssh, ping) all return canned output
+- fixed hostname/uname
 
-## Port strategy
+That's fine -- bots run scripts without checking if commands actually worked.
 
-The honeypot listens on `:2222`. Real sshd moves to a non-standard port
-(e.g. VPS_PORT). An iptables PREROUTING rule redirects port 22 traffic to 2222
-so attackers see port 22 and don't know it's a honeypot.
+## TODO
 
-Don't skip the "verify sshd on new port before continuing" step in the
-deploy instructions. Locking yourself out of a VPS is not fun.
-
----
-
-## Limitations
-
-This is a low-interaction honeypot -- the shell is fake.
-
-- No pipe support (`ls | grep foo` is parsed as one command, pipes are
-  passed as literal characters)
-- No variable expansion (`$PATH`, `$(cmd)` not interpreted)
-- No file system state -- `touch foo` works but `ls` won't show foo
-- Fixed hostname and fake system info (uname, /etc/os-release)
-- No network commands actually work (wget, curl return canned output)
-
-These limitations are intentional for now. The goal is to log what
-attackers try, not to fool a human. Automated attack scripts don't
-usually check if their commands actually worked before moving on.
+- real fs state (so `touch` / `mkdir` / `ls` agree)
+- ratelimit auth attempts per IP, not just total connections
+- pcap mode? could be useful for replay

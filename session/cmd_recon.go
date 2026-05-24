@@ -19,12 +19,10 @@ func init() {
 	register("echo", echoCmd{})
 }
 
-// staticCmd returns a fixed string with exit 0.
 type staticCmd struct{ out string }
 
 func (s staticCmd) Run(_ []string) (string, uint32) { return s.out, 0 }
 
-// hostnameCmd handles `hostname` and `hostname -i`.
 type hostnameCmd struct{}
 
 func (hostnameCmd) Run(args []string) (string, uint32) {
@@ -34,7 +32,6 @@ func (hostnameCmd) Run(args []string) (string, uint32) {
 	return "ubuntu\n", 0
 }
 
-// unameCmd handles common uname flag combinations.
 type unameCmd struct{}
 
 func (unameCmd) Run(args []string) (string, uint32) {
@@ -56,7 +53,6 @@ func (unameCmd) Run(args []string) (string, uint32) {
 	return "Linux\n", 0
 }
 
-// echoCmd joins args with spaces, like /bin/echo with no flags.
 type echoCmd struct{}
 
 func (echoCmd) Run(args []string) (string, uint32) {
@@ -70,17 +66,15 @@ func (echoCmd) Run(args []string) (string, uint32) {
 	return out + "\n", 0
 }
 
-// bootTime is the fake server's boot, fixed for the process lifetime.
+// boot 47-ish days ago, fixed at process start so uptime stays consistent
 var bootTime = time.Now().Add(-47*24*time.Hour - 3*time.Hour - 14*time.Minute)
 
-// dateCmd returns the current UTC date in `date`'s default format.
 type dateCmd struct{}
 
 func (dateCmd) Run(_ []string) (string, uint32) {
 	return time.Now().UTC().Format("Mon Jan _2 15:04:05 MST 2006") + "\n", 0
 }
 
-// uptimeFields returns the current time and uptime string used by uptime/w.
 func uptimeFields() (string, string) {
 	now := time.Now().UTC()
 	d := now.Sub(bootTime)
@@ -91,7 +85,6 @@ func uptimeFields() (string, string) {
 		fmt.Sprintf("up %d days, %2d:%02d", days, hours, mins)
 }
 
-// uptimeCmd returns the standard uptime line.
 type uptimeCmd struct{}
 
 func (uptimeCmd) Run(_ []string) (string, uint32) {
@@ -99,7 +92,6 @@ func (uptimeCmd) Run(_ []string) (string, uint32) {
 	return fmt.Sprintf(" %s %s,  1 user,  load average: 0.08, 0.03, 0.01\n", t, up), 0
 }
 
-// wCmd returns the `w` header followed by one fake session line.
 type wCmd struct{}
 
 func (wCmd) Run(_ []string) (string, uint32) {
@@ -111,7 +103,6 @@ func (wCmd) Run(_ []string) (string, uint32) {
 		t, up, time.Now().UTC().Format("15:04")), 0
 }
 
-// whoCmd returns one fake login line.
 type whoCmd struct{}
 
 func (whoCmd) Run(_ []string) (string, uint32) {
@@ -120,7 +111,6 @@ func (whoCmd) Run(_ []string) (string, uint32) {
 		now.Format("2006-01-02 15:04")), 0
 }
 
-// lastCmd returns a short login history rooted at bootTime.
 type lastCmd struct{}
 
 func (lastCmd) Run(_ []string) (string, uint32) {

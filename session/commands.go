@@ -5,14 +5,13 @@ import (
 	"strings"
 )
 
-// Cmd is a honeypot shell command.
 type Cmd interface {
 	Run(args []string) (string, uint32)
 }
 
 var registry = map[string]Cmd{}
 
-// fakeEnv is the environment the fake shell pretends to have.
+// env we pretend to have. ? is $? (last exit code), always 0 for now.
 var fakeEnv = map[string]string{
 	"HOME":     "/root",
 	"USER":     "root",
@@ -27,20 +26,16 @@ var fakeEnv = map[string]string{
 	"?":        "0",
 }
 
-// register adds c under name; called from init() in cmd_*.go files.
 func register(name string, c Cmd) {
 	registry[name] = c
 }
 
-// expandVars replaces $VAR and ${VAR} with values from fakeEnv.
 func expandVars(s string) string {
-	return os.Expand(s, func(key string) string {
-		return fakeEnv[key] // unset vars -> empty string, same as bash
+	return os.Expand(s, func(k string) string {
+		return fakeEnv[k] // unset -> "" like bash
 	})
 }
 
-// dispatch parses cmd, runs the matching Cmd, returns (stdout, exit).
-// Handles $VAR expansion and single-pipe splitting before lookup.
 func dispatch(cmd string) (string, uint32) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
@@ -48,10 +43,10 @@ func dispatch(cmd string) (string, uint32) {
 	}
 	cmd = expandVars(cmd)
 
-	// pipes: run only the first segment -- real output would be piped but
-	// we don't have a runtime; the full pipeline is already logged by shell.
-	if idx := strings.Index(cmd, "|"); idx >= 0 {
-		cmd = strings.TrimSpace(cmd[:idx])
+	// no real pipes -- just run the LHS. full pipeline is in the log line anyway.
+	// TODO: parse properly when we add file state
+	if i := strings.Index(cmd, "|"); i >= 0 {
+		cmd = strings.TrimSpace(cmd[:i])
 		if cmd == "" {
 			return "", 0
 		}

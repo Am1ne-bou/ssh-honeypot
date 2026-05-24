@@ -10,14 +10,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// newSID returns a random 12-hex-char session identifier.
 func newSID() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("%x", b)
 }
 
-// Handle performs the SSH handshake and manages the resulting session.
 func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 	defer conn.Close()
 
@@ -31,7 +29,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 		)
 		return
 	}
-	conn.SetReadDeadline(time.Time{}) // clear the 30s handshake deadline
+	conn.SetReadDeadline(time.Time{}) // handshake done, drop the deadline
 	defer sconn.Close()
 
 	log.Info("handshake ok",
@@ -56,7 +54,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 	}
 }
 
-// ptyReq matches RFC 4254 §6.2.
+// RFC 4254 6.2 -- pty-req payload
 type ptyReq struct {
 	Term     string
 	Cols     uint32
@@ -70,7 +68,6 @@ type execReq struct{ Command string }
 type envReq struct{ Name, Value string }
 type subsystemReq struct{ Name string }
 
-// handleChannel routes channel requests; shell/exec take ownership of ch.
 func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
 	for req := range reqs {
 		logRequest(req, log)
@@ -109,7 +106,6 @@ func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
 	ch.Close()
 }
 
-// drainRequests logs and rejects post-shell/exec requests until the stream closes.
 func drainRequests(reqs <-chan *ssh.Request, log *slog.Logger) {
 	for req := range reqs {
 		logRequest(req, log)
@@ -119,7 +115,6 @@ func drainRequests(reqs <-chan *ssh.Request, log *slog.Logger) {
 	}
 }
 
-// logRequest parses known request payloads and logs structured fields.
 func logRequest(req *ssh.Request, log *slog.Logger) {
 	switch req.Type {
 	case "pty-req":

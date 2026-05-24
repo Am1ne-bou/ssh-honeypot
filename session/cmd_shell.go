@@ -16,7 +16,6 @@ func init() {
 	register("python2", pythonCmd{version: "Python 2.7.18"})
 }
 
-// envCmd prints all fake env vars in KEY=VALUE format.
 type envCmd struct{}
 
 func (envCmd) Run(_ []string) (string, uint32) {
@@ -34,7 +33,6 @@ func (envCmd) Run(_ []string) (string, uint32) {
 	return b.String(), 0
 }
 
-// printenvCmd prints specific var(s), or all if no args.
 type printenvCmd struct{}
 
 func (printenvCmd) Run(args []string) (string, uint32) {
@@ -50,9 +48,7 @@ func (printenvCmd) Run(args []string) (string, uint32) {
 	return out, 0
 }
 
-// bashCmd handles `bash -c "..."` by re-dispatching the command, and
-// `-i` / no-args as a shell (which we can't really start from here, so
-// just return nothing -- the caller handles the session type).
+// bash -c "..." -> rerun the inner cmd through dispatch. interactive bash just exits.
 type bashCmd struct{}
 
 func (bashCmd) Run(args []string) (string, uint32) {
@@ -62,21 +58,15 @@ func (bashCmd) Run(args []string) (string, uint32) {
 	return "", 0
 }
 
-// pythonCmd handles the most common attack patterns: python3 -c "..." and version queries.
 type pythonCmd struct{ version string }
 
 func (p pythonCmd) Run(args []string) (string, uint32) {
 	if len(args) == 0 {
-		// interactive python -- just hang, eventually idle timeout kills it
-		return "", 0
+		return "", 0 // interactive python -- idle timer will kill it
 	}
 	if args[0] == "--version" || args[0] == "-V" {
 		return p.version + "\n", 0
 	}
-	if args[0] == "-c" {
-		// attackers use: python3 -c 'import socket,...' for reverse shells
-		// log happens via shell/exec log entry; return plausible error
-		return "", 0
-	}
+	// python3 -c '...' = reverse shell payload territory. already logged upstream.
 	return "", 0
 }
