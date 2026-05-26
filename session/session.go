@@ -16,7 +16,7 @@ func newSID() string {
 	return fmt.Sprintf("%x", b)
 }
 
-func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) string {
+func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 	defer conn.Close()
 
 	log = log.With("sid", newSID())
@@ -27,7 +27,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) string {
 			"remote", conn.RemoteAddr().String(),
 			"err", err,
 		)
-		return ""
+		return
 	}
 	conn.SetReadDeadline(time.Time{}) // handshake done, drop the deadline
 	defer sconn.Close()
@@ -52,7 +52,6 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) string {
 		}
 		go handleChannel(ch, chReqs, log)
 	}
-	return string(sconn.SessionID())
 }
 
 // RFC 4254 6.2 -- pty-req payload

@@ -13,24 +13,31 @@ import (
 	"github.com/Am1ne-bou/ssh-honeypot/hostkey"
 )
 
-// fakeConn implements ssh.ConnMetadata so we can call PasswordCallback
-// directly without a real SSH handshake.
-type fakeConn struct{ sid []byte }
+// fakeConn implements ssh.ConnMetadata for unit testing the callback directly.
+type fakeConn struct {
+	sid  []byte
+	addr net.Addr
+}
 
 func (f *fakeConn) User() string          { return "root" }
 func (f *fakeConn) SessionID() []byte     { return f.sid }
 func (f *fakeConn) ClientVersion() []byte { return []byte("SSH-2.0-test") }
 func (f *fakeConn) ServerVersion() []byte { return []byte("SSH-2.0-test") }
-func (f *fakeConn) RemoteAddr() net.Addr  { return &net.TCPAddr{} }
+func (f *fakeConn) RemoteAddr() net.Addr  { return f.addr }
 func (f *fakeConn) LocalAddr() net.Addr   { return &net.TCPAddr{} }
 
-// makeCallback mirrors the PasswordCallback closure in Serve.
+func tcpAddr(s string) net.Addr {
+	a, _ := net.ResolveTCPAddr("tcp", s)
+	return a
+}
+
+// makeCallback mirrors the PasswordCallback closure in Serve (keyed by RemoteAddr).
 func makeCallback(threshold int) (func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error), *[]int) {
 	var mu sync.Mutex
 	counts := map[string]int{}
 	log := &[]int{}
 	cb := func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-		id := string(c.SessionID())
+		id := c.RemoteAddr().String()
 		mu.Lock()
 		counts[id]++
 		n := counts[id]
@@ -44,46 +51,42 @@ func makeCallback(threshold int) (func(ssh.ConnMetadata, []byte) (*ssh.Permissio
 	return cb, log
 }
 
-func TestCallbackRejectsFirst3Accepts4th(t *testing.T) {
-	cb, logged := makeCallback(4)
-	fc := &fakeConn{sid: []byte("sid-abc")}
+func TestCallbackRejectsFirst1Accepts2nd(t *testing.T) {
+	cb, logged := makeCallback(2)
+	fc := &fakeConn{addr: tcpAddr("10.0.0.1:5000")}
 
-	for i := 1; i <= 3; i++ {
-		_, err := cb(fc, []byte(fmt.Sprintf("pass%d", i)))
-		if err == nil {
-			t.Errorf("attempt %d: want rejection, got acceptance", i)
-		}
+	_, err := cb(fc, []byte("pass1"))
+	if err == nil {
+		t.Error("attempt 1: want rejection, got acceptance")
 	}
-	_, err := cb(fc, []byte("pass4"))
+	_, err = cb(fc, []byte("pass2"))
 	if err != nil {
-		t.Errorf("attempt 4: want acceptance, got %v", err)
+		t.Errorf("attempt 2: want acceptance, got %v", err)
 	}
-	if len(*logged) != 4 {
-		t.Errorf("want 4 logged, got %d: %v", len(*logged), *logged)
+	if len(*logged) != 2 {
+		t.Errorf("want 2 logged, got %d: %v", len(*logged), *logged)
 	}
 }
 
-func TestCallbackIsolatesSessionIDs(t *testing.T) {
-	cb, _ := makeCallback(4)
-	fc1 := &fakeConn{sid: []byte("sid-1")}
-	fc2 := &fakeConn{sid: []byte("sid-2")}
+func TestCallbackIsolatesByRemoteAddr(t *testing.T) {
+	cb, _ := makeCallback(2)
+	fc1 := &fakeConn{addr: tcpAddr("10.0.0.1:5001")}
+	fc2 := &fakeConn{addr: tcpAddr("10.0.0.2:5001")}
 
-	// fc1 gets 3 attempts
-	for i := 0; i < 3; i++ {
-		cb(fc1, []byte("pass"))
-	}
-	// fc2 starts fresh -- attempt 1, should reject
+	// fc1 gets its first attempt accepted on 2nd -- so do one attempt first
+	cb(fc1, []byte("pass"))
+	// fc2 is a fresh connection, attempt 1 should reject
 	_, err := cb(fc2, []byte("pass"))
 	if err == nil {
-		t.Error("session-2 attempt 1: want rejection (fresh counter), got acceptance")
+		t.Error("fc2 attempt 1: want rejection (fresh counter), got acceptance")
 	}
 }
 
 // Integration test. Uses real TCP + real SSH handshake.
 // ssh.Password() with multiple entries doesn't retry -- the client marks
-// "password" exhausted after the first server rejection. Need
-// RetryableAuthMethod + PasswordCallback to try N different passwords.
-func TestIntegrationAuthAcceptsOnFourthAttempt(t *testing.T) {
+// "password" exhausted after the first server rejection. Use
+// RetryableAuthMethod + PasswordCallback to cycle through passwords.
+func TestIntegrationAuthAcceptsOnSecondAttempt(t *testing.T) {
 	signer, err := hostkey.LoadOrGenerate(filepath.Join(t.TempDir(), "host.key"))
 	if err != nil {
 		t.Fatal(err)
@@ -96,13 +99,13 @@ func TestIntegrationAuthAcceptsOnFourthAttempt(t *testing.T) {
 	cfg := &ssh.ServerConfig{
 		MaxAuthTries: 6,
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			id := string(c.SessionID())
+			id := c.RemoteAddr().String()
 			mu.Lock()
 			counts[id]++
 			n := counts[id]
 			*logged = append(*logged, n)
 			mu.Unlock()
-			if n < 4 {
+			if n < 2 {
 				return nil, fmt.Errorf("bad password")
 			}
 			return nil, nil
@@ -131,7 +134,7 @@ func TestIntegrationAuthAcceptsOnFourthAttempt(t *testing.T) {
 		done <- srvRes{sconn: sconn, err: e}
 	}()
 
-	passwords := []string{"p1", "p2", "p3", "p4"}
+	passwords := []string{"p1", "p2"}
 	idx := 0
 	auth := ssh.RetryableAuthMethod(
 		ssh.PasswordCallback(func() (string, error) {
@@ -165,7 +168,7 @@ func TestIntegrationAuthAcceptsOnFourthAttempt(t *testing.T) {
 	}
 	r.sconn.Close()
 
-	if len(*logged) != 4 {
-		t.Errorf("want 4 attempts logged, got %d: %v", len(*logged), *logged)
+	if len(*logged) != 2 {
+		t.Errorf("want 2 attempts logged, got %d: %v", len(*logged), *logged)
 	}
 }

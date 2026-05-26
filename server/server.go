@@ -29,14 +29,17 @@ func Serve(ctx context.Context, opts *Options) error {
 	cfg := &ssh.ServerConfig{
 		MaxAuthTries: 6,
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			id := string(c.SessionID())
+			// key by remote addr, not session ID -- session ID is only set after
+			// KEX succeeds, so a pre-KEX disconnect would never clean up the entry.
+			// remote addr is available immediately and cleaned up unconditionally below.
+			id := c.RemoteAddr().String()
 			mu.Lock()
 			attempts[id]++
 			n := attempts[id]
 			mu.Unlock()
 
 			outcome := "rejected"
-			if n >= 4 {
+			if n >= 2 {
 				outcome = "accepted"
 			}
 			opts.Auth.Info("auth attempt",
@@ -49,7 +52,7 @@ func Serve(ctx context.Context, opts *Options) error {
 				"outcome", outcome,
 			)
 
-			if n < 4 {
+			if n < 2 {
 				return nil, fmt.Errorf("invalid password")
 			}
 			return nil, nil
@@ -87,12 +90,11 @@ func Serve(ctx context.Context, opts *Options) error {
 				// 30s handshake deadline -- slowloris-style attackers open
 				// the TCP socket then never finish KEX. cleared inside Handle.
 				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-				id := session.Handle(conn, cfg, opts.Session)
-				if id != "" {
-					mu.Lock()
-					delete(attempts, id)
-					mu.Unlock()
-				}
+				addr := conn.RemoteAddr().String()
+				session.Handle(conn, cfg, opts.Session)
+				mu.Lock()
+				delete(attempts, addr)
+				mu.Unlock()
 			}()
 		default:
 			opts.Server.Info("connection rejected", "remote", conn.RemoteAddr().String(), "reason", "max_conn")
