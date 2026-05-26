@@ -153,3 +153,40 @@ Lab Journal Decision Reasons
 - Terminal modes
 - Fake system consistency
 - Attack scripts flow
+
+---
+
+### Pre-deploy session
+
+**Picked / rejected:**
+
+- Multi-password per connection: reject first 3, accept on 4th
+- `sync.Mutex` + `map[string]int` keyed by `c.SessionID()` for per-connection counts
+- `Handle` returns `string` (session ID) so the goroutine can clean up the map after disconnect
+- `MaxAuthTries: 6` set explicitly so library doesn't cut off clients before the 4th attempt
+- `go mod tidy` -- x/crypto was marked `// indirect`, fixed to direct
+- Public key auth: not logged at all, no `PublicKeyCallback` set -- silent drop
+
+**Skipped:**
+
+- `PublicKeyCallback` -- bots rarely use pubkey, adding later
+- `AuthLogCallback` -- would catch all methods but less detail per attempt
+
+**Notes:**
+
+- Multiple `ssh.Password()` entries in the client config do NOT retry -- SSH client
+  marks the "password" method exhausted after the first server rejection. Need
+  `RetryableAuthMethod` + `PasswordCallback` with a cycling closure to test N attempts.
+- `net.Pipe()` deadlocks for SSH tests: both sides write the version string before
+  reading, synchronous pipe means neither can proceed. Use real TCP (`net.Listen` on :0).
+- Unit-testing the callback directly with a fake `ssh.ConnMetadata` is cleaner than
+  going through a full handshake for the counter logic.
+- Bots that only try 1-2 passwords per connection now get rejected and reconnect.
+  The `"attempt"` field in auth.log lets you correlate sessions from the same IP.
+
+**Tests added:**
+
+- `hostkey`: LoadOrGenerate creates file, reloads same key
+- `logger`: files created, Close no error, writes land on disk
+- `session/cmd_test.go`: table-driven for 24 commands + 8 individual edge cases
+- `server`: 2 unit tests (callback counter, session isolation) + 1 integration test
