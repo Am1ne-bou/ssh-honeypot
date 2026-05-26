@@ -69,6 +69,11 @@ def main():
         default="./logs",
         help="directory containing auth.log, session.log, server.log (default: ./logs)",
     )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="show all entries instead of top N",
+    )
     args = parser.parse_args()
 
     auth_path    = os.path.join(args.logdir, "auth.log")
@@ -151,20 +156,22 @@ def main():
     print("  Rejected               : %d" % rejected)
     print("  Commands captured      : %d" % sum(commands.values()))
 
-    heading("TOP 15 PASSWORDS")
-    print_top(passwords, 15)
+    N = 10**9 if args.full else None
 
-    heading("TOP 15 USERNAMES")
-    print_top(usernames, 15)
+    heading("TOP 15 PASSWORDS" if not args.full else "ALL PASSWORDS")
+    print_top(passwords, N or 15)
 
-    heading("TOP 15 SOURCE IPs")
-    print_top(source_ips, 15)
+    heading("TOP 15 USERNAMES" if not args.full else "ALL USERNAMES")
+    print_top(usernames, N or 15)
 
-    heading("TOP 10 CLIENT BANNERS")
-    print_top(banners, 10)
+    heading("TOP 15 SOURCE IPs" if not args.full else "ALL SOURCE IPs")
+    print_top(source_ips, N or 15)
 
-    heading("TOP 20 COMMANDS")
-    print_top(commands, 20)
+    heading("TOP 10 CLIENT BANNERS" if not args.full else "ALL CLIENT BANNERS")
+    print_top(banners, N or 10)
+
+    heading("ALL COMMANDS" if args.full else "TOP 20 COMMANDS")
+    print_top(commands, N or 20)
 
     heading("TIME RANGE")
     if timestamps:
