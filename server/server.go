@@ -27,19 +27,19 @@ func Serve(ctx context.Context, opts *Options) error {
 	attempts := map[string]int{}
 
 	cfg := &ssh.ServerConfig{
-		MaxAuthTries: 6,
+		MaxAuthTries: 20,
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			// key by remote addr, not session ID -- session ID is only set after
-			// KEX succeeds, so a pre-KEX disconnect would never clean up the entry.
-			// remote addr is available immediately and cleaned up unconditionally below.
-			id := c.RemoteAddr().String()
+			// key by IP only, not IP:port -- bots open a fresh TCP connection per
+			// guess so the source port changes every time. IP:port would reset the
+			// counter on each connection and nobody would ever reach the threshold.
+			host, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 			mu.Lock()
-			attempts[id]++
-			n := attempts[id]
+			attempts[host]++
+			n := attempts[host]
 			mu.Unlock()
 
 			outcome := "rejected"
-			if n >= 2 {
+			if n >= 10 {
 				outcome = "accepted"
 			}
 			opts.Auth.Info("auth attempt",
@@ -52,7 +52,7 @@ func Serve(ctx context.Context, opts *Options) error {
 				"outcome", outcome,
 			)
 
-			if n < 2 {
+			if n < 10 {
 				return nil, fmt.Errorf("invalid password")
 			}
 			return nil, nil
@@ -90,10 +90,14 @@ func Serve(ctx context.Context, opts *Options) error {
 				// 30s handshake deadline -- slowloris-style attackers open
 				// the TCP socket then never finish KEX. cleared inside Handle.
 				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-				addr := conn.RemoteAddr().String()
+				host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 				session.Handle(conn, cfg, opts.Session)
 				mu.Lock()
-				delete(attempts, addr)
+				// only reset after the bot reached the shell -- deleting on every
+				// connection close would wipe the counter and keep n stuck at 1
+				if attempts[host] >= 10 {
+					delete(attempts, host)
+				}
 				mu.Unlock()
 			}()
 		default:

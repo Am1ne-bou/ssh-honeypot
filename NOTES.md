@@ -190,3 +190,37 @@ Lab Journal Decision Reasons
 - `logger`: files created, Close no error, writes land on disk
 - `session/cmd_test.go`: table-driven for 24 commands + 8 individual edge cases
 - `server`: 2 unit tests (callback counter, session isolation) + 1 integration test
+
+---
+
+### Post-deploy bug fix
+
+**The bug:**
+
+Deployed the honeypot, 329 auth attempts in 4h, only 2 got a shell -- both from a
+human tester. Every real bot was rejected on every attempt.
+
+Root cause: the attempts map was keyed by `c.RemoteAddr().String()` which returns
+`IP:port`. Bots open a fresh TCP connection per password guess, each connection uses
+a different ephemeral source port, so the counter key changed every time and n was
+always 1. Nobody ever reached the threshold.
+
+Second bug found during fix: the goroutine cleanup ran `delete(attempts, host)` after
+every connection close, which wiped the counter even when using IP-only keys. Had to
+change it to only delete when `attempts[host] >= 10` -- otherwise counter still resets.
+
+**Fixed:**
+
+- Key by IP only: `net.SplitHostPort` strips the port
+- Cleanup only on accept: `if attempts[host] >= 10 { delete }`
+- Threshold bumped 2 -> 10: harvest more passwords before letting bot through
+- `MaxAuthTries` bumped 6 -> 20 to match
+
+**Tests added to catch regressions:**
+
+- `TestCallbackAccumulatesAcrossConnections`: same IP, 10 different ports, n must go 1..10
+- `TestCallbackResetsOnlyAfterAccept`: cleanup must not wipe counter on rejected connections
+- `TestIntegrationThresholdAcrossConnections`: real `Serve()`, 10 sequential TCP connections,
+  connection 10 accepted -- this is the test that caught the cleanup bug live
+
+**Verified on VPS:** attempts 1-9 rejected, attempt 10 accepted, attempt 11 rejected (reset).
