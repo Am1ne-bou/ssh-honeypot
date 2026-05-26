@@ -9,6 +9,28 @@ the attacker into a fake shell. Every command they type is logged as JSON.
 Built to sit on a real public VPS and collect attack data -- what credentials
 bots try, what recon commands they run once they think they're in.
 
+## findings (first 6 hours, Helsinki VPS)
+
+541 auth attempts from 10 source IPs. Top passwords: `123456`, `123`, `1`, `1234`.
+Almost all clients identify as `SSH-2.0-Go` -- mass scanners written in Go running
+credential lists in parallel.
+
+Once a bot got a shell, the most common command sequence was:
+
+```
+uname -s -v -n -r -m
+nproc
+lspci | egrep VGA && lspci | grep 3D
+uname -m
+```
+
+That last line -- `lspci | grep 3D` -- is checking for a GPU. This is a crypto miner
+looking for hardware worth deploying on. The bot fingerprints the machine (OS, kernel,
+CPU count, GPU presence) and either drops a miner or moves on. It ran this exact
+script 11 times in the session.
+
+---
+
 ## architecture
 
 ```
