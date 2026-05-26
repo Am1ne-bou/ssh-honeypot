@@ -17,6 +17,16 @@ func init() {
 	register("who", whoCmd{})
 	register("last", lastCmd{})
 	register("echo", echoCmd{})
+	register("nproc", staticCmd{out: "8\n"})
+	register("lspci", staticCmd{out: "" +
+		"00:00.0 Host bridge: Intel Corporation 440FX - 82441FX PMC [Natoma] (rev 02)\n" +
+		"00:01.0 ISA bridge: Intel Corporation 82371SB PIIX3 ISA [Natoma/Triton II]\n" +
+		"00:01.1 IDE interface: Intel Corporation 82371SB PIIX3 IDE [Natoma/Triton II]\n" +
+		"00:01.3 Bridge: Intel Corporation 82371AB/EB/MB PIIX4 ACPI (rev 03)\n" +
+		"00:02.0 VGA compatible controller: Cirrus Logic GD 5446\n" +
+		"00:04.0 3D controller: NVIDIA Corporation TU104GL [Tesla T4] (rev a1)\n" +
+		"00:05.0 Ethernet controller: Red Hat, Inc. Virtio network device\n",
+	})
 }
 
 type staticCmd struct{ out string }
@@ -38,9 +48,17 @@ func (unameCmd) Run(args []string) (string, uint32) {
 	if len(args) == 0 {
 		return "Linux\n", 0
 	}
-	switch args[0] {
+	// join all flags into one string so "-s -v -n -r -m" and "-a" both work
+	flags := ""
+	for _, a := range args {
+		flags += a
+	}
+	switch flags {
 	case "-a":
 		return "Linux ubuntu 6.8.0-49-generic #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux\n", 0
+	case "-s-v-n-r-m":
+		// what the miner recon script sends -- kernel name, version, nodename, release, machine
+		return "Linux #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 ubuntu 6.8.0-49-generic x86_64\n", 0
 	case "-r":
 		return "6.8.0-49-generic\n", 0
 	case "-m":
