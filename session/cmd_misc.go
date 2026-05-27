@@ -171,7 +171,15 @@ func (sshCmd) Run(args []string) (string, uint32) {
 
 type scpCmd struct{}
 
-func (scpCmd) Run(_ []string) (string, uint32) {
+func (scpCmd) Run(args []string) (string, uint32) {
+	for _, a := range args {
+		if a == "-t" {
+			// server-side receive -- in a shell context we can't do the protocol,
+			// but returning 0 makes the bot believe the upload worked so we see
+			// what it does next (chmod, exec, etc.)
+			return "", 0
+		}
+	}
 	return "ssh: Network is unreachable\nlost connection\n", 1
 }
 

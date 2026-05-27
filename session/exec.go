@@ -26,6 +26,13 @@ func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 	}()
 
 	log.Info("exec", "command", cmd)
+
+	// SCP receive needs raw channel access for the wire protocol -- can't go through dispatch
+	if isSCPReceive(cmd) {
+		runSCPReceive(ch, cmd, log)
+		return
+	}
+
 	out, exit := dispatch(cmd)
 	if _, err := ch.Write([]byte(out)); err != nil {
 		log.Error("exec write failed", "err", err)
