@@ -12,7 +12,7 @@ import (
 
 const prompt = "root@ubuntu:~# "
 
-func runShell(ch ssh.Channel, log *slog.Logger) {
+func runShell(ch ssh.Channel, log *slog.Logger, sess *Session) {
 	defer ch.Close()
 
 	// bots that connect and just sit there hold a goroutine forever -- drop after 5min idle
@@ -68,7 +68,7 @@ func runShell(ch ssh.Channel, log *slog.Logger) {
 				ch.SendRequest("exit-status", false, status)
 				return
 			}
-			out, _ := dispatch(cmd)
+			out, _ := sess.dispatch(cmd)
 			out = strings.ReplaceAll(out, "\n", "\r\n")
 			if _, err := ch.Write([]byte(out)); err != nil {
 				return
