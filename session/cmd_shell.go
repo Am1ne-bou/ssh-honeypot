@@ -18,7 +18,7 @@ func init() {
 
 type envCmd struct{}
 
-func (envCmd) Run(_ []string) (string, uint32) {
+func (envCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	keys := make([]string, 0, len(fakeEnv))
 	for k := range fakeEnv {
 		if k != "?" {
@@ -35,9 +35,9 @@ func (envCmd) Run(_ []string) (string, uint32) {
 
 type printenvCmd struct{}
 
-func (printenvCmd) Run(args []string) (string, uint32) {
+func (printenvCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
-		return envCmd{}.Run(nil)
+		return envCmd{}.Run(nil, "", nil)
 	}
 	out := ""
 	for _, a := range args {
@@ -51,22 +51,21 @@ func (printenvCmd) Run(args []string) (string, uint32) {
 // bash -c "..." -> rerun the inner cmd through dispatch. interactive bash just exits.
 type bashCmd struct{}
 
-func (bashCmd) Run(args []string) (string, uint32) {
+func (bashCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	if len(args) >= 2 && args[0] == "-c" {
-		return dispatch(strings.Join(args[1:], " "))
+		return sess.dispatch(strings.Join(args[1:], " "))
 	}
 	return "", 0
 }
 
 type pythonCmd struct{ version string }
 
-func (p pythonCmd) Run(args []string) (string, uint32) {
+func (p pythonCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
-		return "", 0 // interactive python -- idle timer will kill it
+		return "", 0
 	}
 	if args[0] == "--version" || args[0] == "-V" {
 		return p.version + "\n", 0
 	}
-	// python3 -c '...' = reverse shell payload territory. already logged upstream.
 	return "", 0
 }

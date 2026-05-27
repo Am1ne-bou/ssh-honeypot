@@ -284,3 +284,79 @@ partially accumulated), full exchange completed.
 - `chmod +x` + execute after scp -- means the upload path worked
 - `curl`/`wget` with a real C2 URL in session.log -- that's the money finding
 - `crontab`, `systemctl` -- persistence phase
+
+---
+
+### I-2: stateful virtual filesystem
+
+**Picked:**
+
+- `Session` struct per connection: `cwd`, `fs map[string][]byte`, `dirs map[string]bool`
+- `mkdir`, `touch`, `rm`, `cd`, `pwd` all mutate/read session state
+- `ls` checks session FS first, falls back to hardcoded for `/` and home
+- `cat` checks session FS first -- uploaded files visible after scp
+- `scp` writes received file path into `sess.fs` so `ls /tmp` shows it
+- `/bin/echo` added to `fakeFiles` as ELF magic bytes -- closes T2
+
+**Rejected:**
+
+- global FS state -- per-session is cleaner and avoids cross-session leaks
+- persistent FS across reconnects -- not worth the complexity
+
+---
+
+### I-4: real pipe execution
+
+**Picked:**
+
+- `dispatch` splits on `|`, feeds each stage stdout into next stage stdin
+- `Cmd` interface gains `stdin string` and `sess *Session` params
+- `grep` filters stdin lines, joins multi-word patterns (handles shell quoting split by Fields)
+- `wc` counts lines/words/bytes in stdin
+- `head -c N` slices first N bytes of stdin
+- `awk` with `{print $1}` / `{printf $1}` extracts first field; no-arg passes stdin through
+- full Diicot recon pipeline now works end-to-end: `nvidia-smi -q | grep "Product Name" | awk | wc -l | head -c 1` -> `1`
+
+**Rejected:**
+
+- semicolon chaining -- not in scope, pipes cover the capture data
+
+---
+
+### I-8 + I-10: analysis scripts
+
+**Picked:**
+
+- `analysis/sessions.py` -- groups events by `sid`, renders per-session Markdown timeline
+- `analysis/timeline.py` -- first/last-seen per password and command, flags chpasswd overlap (credential loop)
+
+---
+
+### I-3: missing commands
+
+**Picked:**
+
+- `nvidia-smi` with real Tesla T4 output for bare, `-q`, `-L` -- closes T1
+- `killall`, `chattr`, `disown`, `chpasswd` as exit-0 noops -- closes T4
+- `awk`, `wc`, `head`, `grep` and others registered -- no pipe support yet so they're stubs
+- `fakeBinaries` updated so `which`/`whereis` return real paths
+
+**Rejected:**
+
+- making `awk`/`wc`/`head` do real text processing -- pointless without pipes (I-4)
+
+---
+
+### I-1: payload quarantine
+
+**Picked:**
+
+- `--quarantine-dir` flag, empty = disabled, dir created at startup
+- `filepath.Base` on attacker-supplied filename -- path traversal kill
+- 50MB cap before saving, drain rest to discard so protocol stays intact
+- `<sha256>-<name>.bin` naming -- deduplication is free
+
+**Rejected:**
+
+- hardcoded path next to log-dir -- wanted operator control
+- saving to discard on any error -- kept as fallback, not default

@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -9,7 +10,7 @@ func init() {
 	register("whoami", staticCmd{out: "root\n"})
 	register("id", staticCmd{out: "uid=0(root) gid=0(root) groups=0(root)\n"})
 	register("hostname", hostnameCmd{})
-	register("pwd", staticCmd{out: "/root\n"})
+	register("pwd", pwdCmd{})
 	register("uname", unameCmd{})
 	register("date", dateCmd{})
 	register("uptime", uptimeCmd{})
@@ -32,13 +33,13 @@ func init() {
 
 type staticCmd struct{ out string }
 
-func (s staticCmd) Run(_ []string) (string, uint32) { return s.out, 0 }
+func (s staticCmd) Run(_ []string, _ string, _ *Session) (string, uint32) { return s.out, 0 }
 
 // nvidiaSmiCmd returns output consistent with the Tesla T4 advertised by lspci.
 // Closes T1: bots grep "Product Name" from -q output to decide whether to mine.
 type nvidiaSmiCmd struct{}
 
-func (nvidiaSmiCmd) Run(args []string) (string, uint32) {
+func (nvidiaSmiCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) > 0 && args[0] == "-L" {
 		return "GPU 0: Tesla T4 (UUID: GPU-4c3f2da3-bd96-b3b7-6b17-2ad5de1fe891)\n", 0
 	}
@@ -87,7 +88,7 @@ func (nvidiaSmiCmd) Run(args []string) (string, uint32) {
 
 type hostnameCmd struct{}
 
-func (hostnameCmd) Run(args []string) (string, uint32) {
+func (hostnameCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) > 0 && args[0] == "-i" {
 		return "10.0.0.42\n", 0
 	}
@@ -96,20 +97,15 @@ func (hostnameCmd) Run(args []string) (string, uint32) {
 
 type unameCmd struct{}
 
-func (unameCmd) Run(args []string) (string, uint32) {
+func (unameCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "Linux\n", 0
 	}
-	// join all flags into one string so "-s -v -n -r -m" and "-a" both work
-	flags := ""
-	for _, a := range args {
-		flags += a
-	}
+	flags := strings.Join(args, "")
 	switch flags {
 	case "-a":
 		return "Linux ubuntu 6.8.0-49-generic #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux\n", 0
 	case "-s-v-n-r-m":
-		// what the miner recon script sends -- kernel name, version, nodename, release, machine
 		return "Linux #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 ubuntu 6.8.0-49-generic x86_64\n", 0
 	case "-r":
 		return "6.8.0-49-generic\n", 0
@@ -125,7 +121,7 @@ func (unameCmd) Run(args []string) (string, uint32) {
 
 type echoCmd struct{}
 
-func (echoCmd) Run(args []string) (string, uint32) {
+func (echoCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	out := ""
 	for i, a := range args {
 		if i > 0 {
@@ -141,7 +137,7 @@ var bootTime = time.Now().Add(-47*24*time.Hour - 3*time.Hour - 14*time.Minute)
 
 type dateCmd struct{}
 
-func (dateCmd) Run(_ []string) (string, uint32) {
+func (dateCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return time.Now().UTC().Format("Mon Jan _2 15:04:05 MST 2006") + "\n", 0
 }
 
@@ -157,14 +153,14 @@ func uptimeFields() (string, string) {
 
 type uptimeCmd struct{}
 
-func (uptimeCmd) Run(_ []string) (string, uint32) {
+func (uptimeCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	t, up := uptimeFields()
 	return fmt.Sprintf(" %s %s,  1 user,  load average: 0.08, 0.03, 0.01\n", t, up), 0
 }
 
 type wCmd struct{}
 
-func (wCmd) Run(_ []string) (string, uint32) {
+func (wCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	t, up := uptimeFields()
 	return fmt.Sprintf(
 		" %s %s,  1 user,  load average: 0.08, 0.03, 0.01\n"+
@@ -175,7 +171,7 @@ func (wCmd) Run(_ []string) (string, uint32) {
 
 type whoCmd struct{}
 
-func (whoCmd) Run(_ []string) (string, uint32) {
+func (whoCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	now := time.Now().UTC()
 	return fmt.Sprintf("root     pts/0        %s (10.0.0.1)\n",
 		now.Format("2006-01-02 15:04")), 0
@@ -183,7 +179,7 @@ func (whoCmd) Run(_ []string) (string, uint32) {
 
 type lastCmd struct{}
 
-func (lastCmd) Run(_ []string) (string, uint32) {
+func (lastCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	now := time.Now().UTC()
 	return fmt.Sprintf(
 		"root     pts/0        10.0.0.1         %s   still logged in\n"+

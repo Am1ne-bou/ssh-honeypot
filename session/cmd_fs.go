@@ -1,8 +1,15 @@
 package session
 
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
 func init() {
 	register("ls", lsCmd{})
 	register("cat", catCmd{})
+	register("pwd", pwdCmd{})
 	register("df", dfCmd{})
 	register("free", freeCmd{})
 	register("mount", mountCmd{})
@@ -13,14 +20,30 @@ func init() {
 
 type lsCmd struct{}
 
-func (lsCmd) Run(args []string) (string, uint32) {
+func (lsCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	flags, paths := splitArgs(args)
-	path := "."
+	target := sess.cwd
 	if len(paths) > 0 {
-		path = paths[0]
+		target = sess.resolvePath(paths[0])
 	}
 
-	if path == "/" {
+	// check session FS for dynamic entries (uploaded files, mkdir'd dirs)
+	dynamic := sess.sessionLS(target)
+	if len(dynamic) > 0 {
+		sort.Strings(dynamic)
+		if containsFlag(flags, 'l') {
+			var b strings.Builder
+			fmt.Fprintf(&b, "total %d\n", len(dynamic))
+			for _, e := range dynamic {
+				fmt.Fprintf(&b, "-rwxr-xr-x 1 root root 4096 Jan  1 00:00 %s\n", e)
+			}
+			return b.String(), 0
+		}
+		return strings.Join(dynamic, "  ") + "\n", 0
+	}
+
+	// fall back to hardcoded output for well-known paths
+	if target == "/" {
 		return "bin   dev  home  lib32  libx32  media  opt   root  sbin  srv  tmp  usr\n" +
 			"boot  etc  lib   lib64  lost+found  mnt  proc  run   sbin  sys  var\n", 0
 	}
@@ -93,6 +116,8 @@ var fakeFiles = map[string]string{
 	"/proc/version": "Linux version 6.8.0-49-generic (buildd@lcy02-amd64-103) " +
 		"(gcc-13 (Ubuntu 13.2.0-23ubuntu4) 13.2.0, GNU ld (GNU Binutils for Ubuntu) 2.42) " +
 		"#49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025\n",
+	// /bin/echo exists so cat /bin/echo returns something instead of "No such file" -- closes T2
+	"/bin/echo": "\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x3e\x00",
 }
 
 var permDeniedFiles = map[string]bool{
@@ -101,23 +126,37 @@ var permDeniedFiles = map[string]bool{
 	"/etc/sudoers": true,
 }
 
-func (catCmd) Run(args []string) (string, uint32) {
+func (catCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "", 0
 	}
-	path := args[0]
-	if permDeniedFiles[path] {
-		return "cat: " + path + ": Permission denied\n", 1
+	p := sess.resolvePath(args[0])
+	if permDeniedFiles[p] {
+		return "cat: " + args[0] + ": Permission denied\n", 1
 	}
-	if out, ok := fakeFiles[path]; ok {
-		return out, 0
+	// check live session fs first (uploaded files, etc.)
+	if content, ok := sess.fs[p]; ok {
+		if len(content) == 0 {
+			return "", 0
+		}
+		// binary content -- tell the attacker it's there without spewing bytes
+		if !strings.HasPrefix(string(content), "\x7fELF") {
+			return string(content), 0
+		}
+		return fmt.Sprintf("cat: %s: binary file\n", args[0]), 0
 	}
-	return "cat: " + path + ": No such file or directory\n", 1
+	return "cat: " + args[0] + ": No such file or directory\n", 1
+}
+
+type pwdCmd struct{}
+
+func (pwdCmd) Run(_ []string, _ string, sess *Session) (string, uint32) {
+	return sess.cwd + "\n", 0
 }
 
 type dfCmd struct{}
 
-func (dfCmd) Run(args []string) (string, uint32) {
+func (dfCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) > 0 && args[0] == "-h" {
 		return "Filesystem      Size  Used Avail Use% Mounted on\n" +
 			"/dev/vda1        39G  7.9G   30G  22% /\n" +
@@ -130,7 +169,7 @@ func (dfCmd) Run(args []string) (string, uint32) {
 
 type freeCmd struct{}
 
-func (freeCmd) Run(args []string) (string, uint32) {
+func (freeCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) > 0 && (args[0] == "-m" || args[0] == "-h") {
 		return "               total        used        free      shared  buff/cache   available\n" +
 			"Mem:            1992         158        1488           1         345        1747\n" +
@@ -143,7 +182,7 @@ func (freeCmd) Run(args []string) (string, uint32) {
 
 type mountCmd struct{}
 
-func (mountCmd) Run(_ []string) (string, uint32) {
+func (mountCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "/dev/vda1 on / type ext4 (rw,relatime,discard)\n" +
 		"proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)\n" +
 		"sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)\n" +
@@ -152,7 +191,7 @@ func (mountCmd) Run(_ []string) (string, uint32) {
 
 type psCmd struct{}
 
-func (psCmd) Run(args []string) (string, uint32) {
+func (psCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	hasAux := false
 	for _, a := range args {
 		if a == "aux" || a == "-aux" || a == "-ef" {
@@ -173,7 +212,7 @@ func (psCmd) Run(args []string) (string, uint32) {
 
 type crontabCmd struct{}
 
-func (crontabCmd) Run(args []string) (string, uint32) {
+func (crontabCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) > 0 && args[0] == "-l" {
 		return "no crontab for root\n", 1
 	}

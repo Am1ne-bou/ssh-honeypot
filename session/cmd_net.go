@@ -16,7 +16,7 @@ func init() {
 
 type ifconfigCmd struct{}
 
-func (ifconfigCmd) Run(_ []string) (string, uint32) {
+func (ifconfigCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n" +
 		"        inet 10.0.0.42  netmask 255.255.255.0  broadcast 10.0.0.255\n" +
 		"        ether 52:54:00:a1:b2:c3  txqueuelen 1000  (Ethernet)\n" +
@@ -29,7 +29,7 @@ func (ifconfigCmd) Run(_ []string) (string, uint32) {
 
 type ipCmd struct{}
 
-func (ipCmd) Run(args []string) (string, uint32) {
+func (ipCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "Usage: ip [ OPTIONS ] OBJECT { COMMAND | help }\n", 255
 	}
@@ -55,7 +55,7 @@ func (ipCmd) Run(args []string) (string, uint32) {
 
 type netstatCmd struct{}
 
-func (netstatCmd) Run(_ []string) (string, uint32) {
+func (netstatCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "Active Internet connections (servers and established)\n" +
 		"Proto Recv-Q Send-Q Local Address           Foreign Address         State\n" +
 		"tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\n" +
@@ -64,14 +64,14 @@ func (netstatCmd) Run(_ []string) (string, uint32) {
 
 type ssCmd struct{}
 
-func (ssCmd) Run(_ []string) (string, uint32) {
+func (ssCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port\n" +
 		"tcp   LISTEN 0      128          0.0.0.0:22        0.0.0.0:*\n", 0
 }
 
 type routeCmd struct{}
 
-func (routeCmd) Run(_ []string) (string, uint32) {
+func (routeCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "Kernel IP routing table\n" +
 		"Destination     Gateway         Genmask         Flags Metric Ref    Use Iface\n" +
 		"0.0.0.0         10.0.0.1        0.0.0.0         UG    100    0        0 eth0\n" +
@@ -80,13 +80,13 @@ func (routeCmd) Run(_ []string) (string, uint32) {
 
 type arpCmd struct{}
 
-func (arpCmd) Run(_ []string) (string, uint32) {
+func (arpCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "? (10.0.0.1) at 52:54:00:12:34:56 [ether] on eth0\n", 0
 }
 
 type pingCmd struct{}
 
-func (pingCmd) Run(args []string) (string, uint32) {
+func (pingCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	target := "8.8.8.8"
 	for _, a := range args {
 		if len(a) > 0 && a[0] != '-' {
@@ -102,11 +102,9 @@ func (pingCmd) Run(args []string) (string, uint32) {
 		"rtt min/avg/max/mdev = 11.800/12.050/12.300/0.250 ms\n", 0
 }
 
-// curl/wget are the bait. attackers chain `curl X | sh` to drop a payload.
-// the command is already logged from the shell loop; just refuse fast.
 type curlCmd struct{}
 
-func (curlCmd) Run(args []string) (string, uint32) {
+func (curlCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	url := ""
 	for _, a := range args {
 		if len(a) > 0 && a[0] != '-' {
@@ -122,7 +120,7 @@ func (curlCmd) Run(args []string) (string, uint32) {
 
 type wgetCmd struct{}
 
-func (wgetCmd) Run(args []string) (string, uint32) {
+func (wgetCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	url := ""
 	for _, a := range args {
 		if len(a) > 0 && a[0] != '-' {
@@ -140,14 +138,15 @@ func (wgetCmd) Run(args []string) (string, uint32) {
 
 type digCmd struct{}
 
-func (digCmd) Run(_ []string) (string, uint32) {
+func (digCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return ";; communications error to 8.8.8.8#53: timed out\n\n" +
 		";; no servers could be reached\n", 9
 }
 
 type nslookupCmd struct{}
 
-func (nslookupCmd) Run(_ []string) (string, uint32) {
+func (nslookupCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return ";; communications error to 8.8.8.8#53: timed out\n\n" +
 		";; no servers could be reached\n", 1
 }
+

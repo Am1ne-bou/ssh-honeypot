@@ -77,7 +77,18 @@ func savePayload(dir, name string, size int64, r io.Reader, log *slog.Logger) in
 	return n
 }
 
-func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger, quarantineDir string) {
+// scpTargetDir extracts the target directory from "scp -t [-r] /path/".
+func scpTargetDir(cmd string) string {
+	fields := strings.Fields(cmd)
+	for _, f := range fields[1:] {
+		if !strings.HasPrefix(f, "-") {
+			return f
+		}
+	}
+	return "/tmp"
+}
+
+func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger, quarantineDir string, sess *Session) {
 	defer ch.Close()
 
 	log.Info("scp receive", "command", cmd)
@@ -112,6 +123,10 @@ func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger, quarantineDir s
 						} else {
 							n, _ = io.Copy(io.Discard, io.LimitReader(r, size))
 						}
+						// mark file in session FS so subsequent ls/cat see it
+						targetDir := scpTargetDir(cmd)
+						sess.fs[filepath.Join(targetDir, name)] = []byte{}
+						sess.dirs[targetDir] = true
 						log.Info("scp data drained", "name", name, "bytes", n)
 					}
 					r.ReadByte()           // trailing null after file data

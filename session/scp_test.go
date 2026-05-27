@@ -90,7 +90,7 @@ func TestSCPReceiveSingleFile(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	runSCPReceive(fc, "scp -t -r /lib/abc/", log, "")
+	runSCPReceive(fc, "scp -t -r /lib/abc/", log, "", newSession())
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0, got %d", fc.exit)
@@ -124,7 +124,7 @@ func TestSCPReceiveDirectory(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	runSCPReceive(fc, "scp -t -r /tmp/drop/", log, "")
+	runSCPReceive(fc, "scp -t -r /tmp/drop/", log, "", newSession())
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0, got %d", fc.exit)
@@ -209,7 +209,7 @@ func TestSCPReceiveQuarantines(t *testing.T) {
 	fc := &fakeChan{r: strings.NewReader(attackerData), buf: bytes.Buffer{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	runSCPReceive(fc, "scp -t /tmp/x/", log, dir)
+	runSCPReceive(fc, "scp -t /tmp/x/", log, dir, newSession())
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0, got %d", fc.exit)
@@ -225,7 +225,7 @@ func TestSCPReceiveEmptyStream(t *testing.T) {
 	fc := &fakeChan{r: strings.NewReader(""), buf: bytes.Buffer{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	runSCPReceive(fc, "scp -t /lib/empty/", log, "")
+	runSCPReceive(fc, "scp -t /lib/empty/", log, "", newSession())
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0 even on empty stream, got %d", fc.exit)

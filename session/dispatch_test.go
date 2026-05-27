@@ -53,14 +53,26 @@ func TestDispatchCatShadowDenied(t *testing.T) {
 }
 
 func TestDispatchPipe(t *testing.T) {
-	// pipe should run only the first segment
+	// real pipe: grep filters cat output
 	out, exit := dispatch("cat /etc/passwd | grep root")
 	if exit != 0 {
 		t.Errorf("pipe: want exit 0, got %d", exit)
 	}
-	// should get full passwd, not grep'd output
-	if !strings.Contains(out, "daemon") {
-		t.Errorf("pipe: expected full cat output, got %q", out)
+	if !strings.Contains(out, "root") {
+		t.Errorf("pipe: want 'root' in output, got %q", out)
+	}
+	// grep should have filtered out non-root lines
+	if strings.Contains(out, "daemon") {
+		t.Errorf("pipe: grep should have filtered 'daemon' line, got %q", out)
+	}
+}
+
+func TestDispatchPipeNvidiaSmi(t *testing.T) {
+	// recon script: nvidia-smi -q | grep "Product Name" | awk | wc -l | head -c 1
+	// should produce "1" (one Tesla T4 GPU)
+	out, _ := dispatch(`nvidia-smi -q | grep "Product Name" | awk | wc -l | head -c 1`)
+	if out != "1" {
+		t.Errorf("nvidia-smi recon pipeline: want '1', got %q", out)
 	}
 }
 
@@ -106,6 +118,61 @@ func TestDispatchEnv(t *testing.T) {
 	if !strings.Contains(out, "USER=root") {
 		t.Errorf("env: missing USER=root, got %q", out)
 	}
+}
+
+func TestSessionMkdirLS(t *testing.T) {
+	sess := newSession()
+	sess.dispatch("mkdir /tmp/xlxeavrjsw")
+	out, exit := sess.dispatch("ls /tmp")
+	if exit != 0 {
+		t.Errorf("ls /tmp after mkdir: want exit 0, got %d", exit)
+	}
+	if !strings.Contains(out, "xlxeavrjsw") {
+		t.Errorf("ls /tmp: want new dir in output, got %q", out)
+	}
+}
+
+func TestSessionCd(t *testing.T) {
+	sess := newSession()
+	sess.dispatch("mkdir /tmp/work")
+	out, exit := sess.dispatch("cd /tmp/work")
+	if exit != 0 {
+		t.Errorf("cd existing dir: want exit 0, got %d (out: %q)", exit, out)
+	}
+	pwd, _ := sess.dispatch("pwd")
+	if strings.TrimSpace(pwd) != "/tmp/work" {
+		t.Errorf("pwd after cd: want '/tmp/work', got %q", pwd)
+	}
+}
+
+func TestSessionCdMissing(t *testing.T) {
+	sess := newSession()
+	_, exit := sess.dispatch("cd /nonexistent")
+	if exit == 0 {
+		t.Error("cd missing dir: want non-zero exit")
+	}
+}
+
+func TestSessionCatUploadedFile(t *testing.T) {
+	sess := newSession()
+	// simulate scp writing a file into session FS
+	sess.fs["/tmp/miner"] = []byte("#!/bin/sh\necho pwned\n")
+	out, exit := sess.dispatch("cat /tmp/miner")
+	if exit != 0 {
+		t.Errorf("cat uploaded file: want exit 0, got %d", exit)
+	}
+	if !strings.Contains(out, "pwned") {
+		t.Errorf("cat uploaded file: want file content, got %q", out)
+	}
+}
+
+func TestSessionCatBinEcho(t *testing.T) {
+	// /bin/echo now exists in fakeFiles as ELF bytes -- closes T2
+	out, exit := dispatch("cat /bin/echo")
+	if exit != 0 {
+		t.Errorf("cat /bin/echo: want exit 0, got %d", exit)
+	}
+	_ = out // content is binary, just check it doesn't 404
 }
 
 func TestExpandVars(t *testing.T) {

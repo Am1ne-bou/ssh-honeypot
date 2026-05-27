@@ -1,6 +1,9 @@
 package session
 
-import "strings"
+import (
+	"path"
+	"strings"
+)
 
 func init() {
 	register("sudo", sudoCmd{})
@@ -14,33 +17,94 @@ func init() {
 	register("chown", noopCmd{})
 	register("passwd", passwdCmd{})
 	register("clear", staticCmd{out: "\x1b[H\x1b[2J"})
-	register("cd", noopCmd{}) // TODO: real cwd tracking when session state lands
+	register("cd", cdCmd{})
 	register("export", noopCmd{})
 	register("unset", noopCmd{})
 	register("set", staticCmd{out: ""})
 	register("ssh", sshCmd{})
 	register("scp", scpCmd{})
-	register("touch", noopCmd{})
-	register("mkdir", noopCmd{})
-	register("rm", noopCmd{})
+	register("touch", touchCmd{})
+	register("mkdir", mkdirCmd{})
+	register("rm", rmCmd{})
 	register("rmdir", noopCmd{})
 	register("kill", noopCmd{})
 	register("pkill", noopCmd{})
 	register("killall", noopCmd{})
 	register("chattr", noopCmd{})
 	register("disown", noopCmd{})
-	register("chpasswd", noopCmd{}) // reads root:pass from stdin, we don't handle stdin -- exit 0 is enough
+	register("chpasswd", noopCmd{})
 	register("service", serviceCmd{})
 	register("systemctl", systemctlCmd{})
 }
 
 type noopCmd struct{}
 
-func (noopCmd) Run(_ []string) (string, uint32) { return "", 0 }
+func (noopCmd) Run(_ []string, _ string, _ *Session) (string, uint32) { return "", 0 }
+
+type cdCmd struct{}
+
+func (cdCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
+	target := "/root"
+	if len(args) > 0 && args[0] != "" && args[0] != "~" {
+		target = sess.resolvePath(args[0])
+	}
+	if !sess.dirs[target] {
+		return "bash: cd: " + args[0] + ": No such file or directory\n", 1
+	}
+	sess.cwd = target
+	return "", 0
+}
+
+type mkdirCmd struct{}
+
+func (mkdirCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		dir := sess.resolvePath(a)
+		sess.dirs[dir] = true
+		// also mark parent if it's new
+		parent := path.Dir(dir)
+		if !sess.dirs[parent] {
+			sess.dirs[parent] = true
+		}
+	}
+	return "", 0
+}
+
+type touchCmd struct{}
+
+func (touchCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		p := sess.resolvePath(a)
+		if _, ok := sess.fs[p]; !ok {
+			sess.fs[p] = []byte{}
+		}
+	}
+	return "", 0
+}
+
+type rmCmd struct{}
+
+func (rmCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		p := sess.resolvePath(a)
+		delete(sess.fs, p)
+		delete(sess.dirs, p)
+	}
+	return "", 0
+}
 
 type sudoCmd struct{}
 
-func (sudoCmd) Run(args []string) (string, uint32) {
+func (sudoCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "usage: sudo -h | -K | -k | -V\nusage: sudo -v [-AknS] [-g group] [-h host] [-p prompt] [-u user]\n", 1
 	}
@@ -54,7 +118,6 @@ func (sudoCmd) Run(args []string) (string, uint32) {
 	if args[0] == "-v" || args[0] == "-V" {
 		return "Sudo version 1.9.15p5\nSudoers policy plugin version 1.9.15p5\nSudoers file grammar version 50\n", 0
 	}
-	// drop leading flags, then run the rest as if there was no sudo
 	rest := args
 	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
 		rest = rest[1:]
@@ -62,19 +125,16 @@ func (sudoCmd) Run(args []string) (string, uint32) {
 	if len(rest) == 0 {
 		return "", 0
 	}
-	return dispatch(strings.Join(rest, " "))
+	return sess.dispatch(strings.Join(rest, " "))
 }
 
 type suCmd struct{}
 
-func (suCmd) Run(_ []string) (string, uint32) {
-	// already root, su to root is a noop
-	return "", 0
-}
+func (suCmd) Run(_ []string, _ string, _ *Session) (string, uint32) { return "", 0 }
 
 type aptCmd struct{}
 
-func (aptCmd) Run(args []string) (string, uint32) {
+func (aptCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "apt 2.7.14ubuntu0.1 (amd64)\nUsage: apt [options] command\n", 0
 	}
@@ -119,7 +179,7 @@ var fakeBinaries = map[string]string{
 	"tail":       "/usr/bin/tail",
 }
 
-func (whichCmd) Run(args []string) (string, uint32) {
+func (whichCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "", 1
 	}
@@ -137,7 +197,7 @@ func (whichCmd) Run(args []string) (string, uint32) {
 
 type whereisCmd struct{}
 
-func (whereisCmd) Run(args []string) (string, uint32) {
+func (whereisCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "", 0
 	}
@@ -154,21 +214,17 @@ func (whereisCmd) Run(args []string) (string, uint32) {
 
 type findCmd struct{}
 
-func (findCmd) Run(_ []string) (string, uint32) {
-	// real find with no match exits 0, so do the same
-	return "", 0
-}
+func (findCmd) Run(_ []string, _ string, _ *Session) (string, uint32) { return "", 0 }
 
 type passwdCmd struct{}
 
-func (passwdCmd) Run(_ []string) (string, uint32) {
+func (passwdCmd) Run(_ []string, _ string, _ *Session) (string, uint32) {
 	return "Changing password for root.\nCurrent password: \n", 1
 }
 
-// fail fast on outbound ssh so the attacker bails quickly
 type sshCmd struct{}
 
-func (sshCmd) Run(args []string) (string, uint32) {
+func (sshCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	target := ""
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
@@ -184,12 +240,9 @@ func (sshCmd) Run(args []string) (string, uint32) {
 
 type scpCmd struct{}
 
-func (scpCmd) Run(args []string) (string, uint32) {
+func (scpCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	for _, a := range args {
 		if a == "-t" {
-			// server-side receive -- in a shell context we can't do the protocol,
-			// but returning 0 makes the bot believe the upload worked so we see
-			// what it does next (chmod, exec, etc.)
 			return "", 0
 		}
 	}
@@ -198,7 +251,7 @@ func (scpCmd) Run(args []string) (string, uint32) {
 
 type serviceCmd struct{}
 
-func (serviceCmd) Run(args []string) (string, uint32) {
+func (serviceCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) < 2 {
 		return "Usage: service < option > | --status-all | [ service_name [ command | --full-restart ] ]\n", 1
 	}
@@ -207,7 +260,7 @@ func (serviceCmd) Run(args []string) (string, uint32) {
 
 type systemctlCmd struct{}
 
-func (systemctlCmd) Run(args []string) (string, uint32) {
+func (systemctlCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
 		return "", 0
 	}
