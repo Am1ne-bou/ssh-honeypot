@@ -15,6 +15,14 @@ import (
 
 func main() {
 	cfg := config.Parse()
+
+	if cfg.QuarantineDir != "" {
+		if err := os.MkdirAll(cfg.QuarantineDir, 0o700); err != nil {
+			fmt.Fprintln(os.Stderr, "quarantine dir:", err)
+			os.Exit(1)
+		}
+	}
+
 	logs, err := logger.New(cfg.LogDir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "logger init:", err)
@@ -32,12 +40,13 @@ func main() {
 	defer stop()
 
 	opts := &server.Options{
-		Addr:    cfg.Addr,
-		MaxConn: cfg.MaxConn,
-		Signer:  signer,
-		Auth:    logs.Auth,
-		Session: logs.Session,
-		Server:  logs.Server,
+		Addr:          cfg.Addr,
+		MaxConn:       cfg.MaxConn,
+		Signer:        signer,
+		Auth:          logs.Auth,
+		Session:       logs.Session,
+		Server:        logs.Server,
+		QuarantineDir: cfg.QuarantineDir,
 	}
 
 	if err := server.Serve(ctx, opts); err != nil {

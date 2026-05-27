@@ -14,12 +14,13 @@ import (
 )
 
 type Options struct {
-	Addr    string
-	MaxConn int
-	Signer  ssh.Signer
-	Auth    *slog.Logger
-	Session *slog.Logger
-	Server  *slog.Logger
+	Addr          string
+	MaxConn       int
+	Signer        ssh.Signer
+	Auth          *slog.Logger
+	Session       *slog.Logger
+	Server        *slog.Logger
+	QuarantineDir string
 }
 
 func Serve(ctx context.Context, opts *Options) error {
@@ -91,7 +92,7 @@ func Serve(ctx context.Context, opts *Options) error {
 				// the TCP socket then never finish KEX. cleared inside Handle.
 				conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 				host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-				session.Handle(conn, cfg, opts.Session)
+				session.Handle(conn, cfg, opts.Session, opts.QuarantineDir)
 				mu.Lock()
 				// only reset after the bot reached the shell -- deleting on every
 				// connection close would wipe the counter and keep n stuck at 1

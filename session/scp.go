@@ -2,15 +2,21 @@ package session
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 )
+
+const maxPayloadBytes = 50 << 20 // 50 MB -- anything bigger is almost certainly not a dropper
 
 // isSCPReceive reports whether cmd is an scp server-side receive invocation.
 // When a client runs `scp file user@host:/path`, it SSHes to the host and
@@ -40,7 +46,38 @@ func isSCPReceive(cmd string) bool {
 //   client -> <size bytes>  file data
 //   client -> \x00          end of data
 //   server -> \x00          ack
-func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger) {
+// savePayload writes the incoming bytes to quarantineDir/<sha256>-<name>.bin.
+// Falls back to io.Discard on any error so the SCP protocol stays intact.
+func savePayload(dir, name string, size int64, r io.Reader, log *slog.Logger) int64 {
+	if size > maxPayloadBytes {
+		log.Info("scp payload too large, discarding", "name", name, "size", size)
+		n, _ := io.Copy(io.Discard, io.LimitReader(r, size))
+		return n
+	}
+	base := filepath.Base(name) // attacker could send "../../etc/passwd" as filename
+	tmp := filepath.Join(dir, fmt.Sprintf("%d-%s.tmp", time.Now().UnixNano(), base))
+	dst, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o400)
+	if err != nil {
+		// dir not writable or something -- drain so protocol doesn't break
+		n, _ := io.Copy(io.Discard, io.LimitReader(r, size))
+		log.Error("scp quarantine open failed", "err", err)
+		return n
+	}
+	h := sha256.New()
+	n, _ := io.Copy(io.MultiWriter(dst, h), io.LimitReader(r, size))
+	dst.Close()
+	hash := hex.EncodeToString(h.Sum(nil))
+	final := filepath.Join(dir, hash+"-"+base+".bin")
+	if err := os.Rename(tmp, final); err != nil {
+		log.Error("scp quarantine rename", "err", err)
+		os.Remove(tmp)
+	} else {
+		log.Info("scp payload saved", "file", final, "sha256", hash, "bytes", n)
+	}
+	return n
+}
+
+func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger, quarantineDir string) {
 	defer ch.Close()
 
 	log.Info("scp receive", "command", cmd)
@@ -69,7 +106,12 @@ func runSCPReceive(ch ssh.Channel, cmd string, log *slog.Logger) {
 					log.Info("scp file", "name", name, "size", size, "mode", mode)
 					ch.Write([]byte{0x00}) // ack header, client sends data now
 					if size > 0 {
-						n, _ := io.Copy(io.Discard, io.LimitReader(r, size))
+						var n int64
+						if quarantineDir != "" {
+							n = savePayload(quarantineDir, name, size, r, log)
+						} else {
+							n, _ = io.Copy(io.Discard, io.LimitReader(r, size))
+						}
 						log.Info("scp data drained", "name", name, "bytes", n)
 					}
 					r.ReadByte()           // trailing null after file data

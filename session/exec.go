@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
+func runExec(ch ssh.Channel, cmd string, log *slog.Logger, quarantineDir string) {
 	defer ch.Close()
 
 	// if the client opens then stops reading, our Write blocks forever. 2min cap.
@@ -29,7 +29,7 @@ func runExec(ch ssh.Channel, cmd string, log *slog.Logger) {
 
 	// SCP receive needs raw channel access for the wire protocol -- can't go through dispatch
 	if isSCPReceive(cmd) {
-		runSCPReceive(ch, cmd, log)
+		runSCPReceive(ch, cmd, log, quarantineDir)
 		return
 	}
 

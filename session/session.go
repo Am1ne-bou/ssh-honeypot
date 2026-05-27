@@ -16,7 +16,7 @@ func newSID() string {
 	return fmt.Sprintf("%x", b)
 }
 
-func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
+func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger, quarantineDir string) {
 	defer conn.Close()
 
 	log = log.With("sid", newSID())
@@ -50,7 +50,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger) {
 			log.Error("channel accept failed", "err", err)
 			continue
 		}
-		go handleChannel(ch, chReqs, log)
+		go handleChannel(ch, chReqs, log, quarantineDir)
 	}
 }
 
@@ -68,7 +68,7 @@ type execReq struct{ Command string }
 type envReq struct{ Name, Value string }
 type subsystemReq struct{ Name string }
 
-func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
+func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger, quarantineDir string) {
 	for req := range reqs {
 		logRequest(req, log)
 		switch req.Type {
@@ -91,7 +91,7 @@ func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger) {
 				req.Reply(true, nil)
 			}
 			go drainRequests(reqs, log)
-			runExec(ch, p.Command, log)
+			runExec(ch, p.Command, log, quarantineDir)
 			return
 		case "pty-req", "env":
 			if req.WantReply {
