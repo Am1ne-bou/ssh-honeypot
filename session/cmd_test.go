@@ -33,8 +33,21 @@ var cmdOutputCases = []struct {
 	{"cat /etc/os-release", "Ubuntu", 0},
 	{"which bash", "/usr/bin/bash", 0},
 	{"which curl", "/usr/bin/curl", 0},
+	{"which nvidia-smi", "/usr/bin/nvidia-smi", 0},
+	{"which awk", "/usr/bin/awk", 0},
 	{"echo hello world", "hello world", 0},
 	{"crontab -l", "no crontab", 1},
+	{"crontab -r", "", 0},
+	{"nvidia-smi", "Tesla T4", 0},
+	{"nvidia-smi -q", "Product Name", 0},
+	{"nvidia-smi -L", "Tesla T4", 0},
+	{"killall xmrig", "", 0},
+	{"chattr -iae /root/.ssh/authorized_keys", "", 0},
+	{"disown", "", 0},
+	{"chpasswd", "", 0},
+	{"grep foo", "", 1},
+	{"wc -l", "0", 0},
+	{"head -c 1", "", 0},
 }
 
 func TestCmdOutputTable(t *testing.T) {

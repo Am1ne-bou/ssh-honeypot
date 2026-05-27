@@ -27,11 +27,63 @@ func init() {
 		"00:04.0 3D controller: NVIDIA Corporation TU104GL [Tesla T4] (rev a1)\n" +
 		"00:05.0 Ethernet controller: Red Hat, Inc. Virtio network device\n",
 	})
+	register("nvidia-smi", nvidiaSmiCmd{})
 }
 
 type staticCmd struct{ out string }
 
 func (s staticCmd) Run(_ []string) (string, uint32) { return s.out, 0 }
+
+// nvidiaSmiCmd returns output consistent with the Tesla T4 advertised by lspci.
+// Closes T1: bots grep "Product Name" from -q output to decide whether to mine.
+type nvidiaSmiCmd struct{}
+
+func (nvidiaSmiCmd) Run(args []string) (string, uint32) {
+	if len(args) > 0 && args[0] == "-L" {
+		return "GPU 0: Tesla T4 (UUID: GPU-4c3f2da3-bd96-b3b7-6b17-2ad5de1fe891)\n", 0
+	}
+	if len(args) > 0 && args[0] == "-q" {
+		return "==============NVSMI LOG==============\n\n" +
+			"Timestamp                                 : " + time.Now().UTC().Format("Mon Jan  2 15:04:05 2006") + "\n" +
+			"Driver Version                            : 525.85.12\n" +
+			"CUDA Version                              : 12.0\n\n" +
+			"Attached GPUs                             : 1\n" +
+			"GPU 00000000:00:04.0\n" +
+			"    Product Name                          : Tesla T4\n" +
+			"    Product Brand                         : NVIDIA\n" +
+			"    Display Mode                          : Enabled\n" +
+			"    Persistence Mode                      : Disabled\n" +
+			"    MIG Mode\n" +
+			"        Current                           : Disabled\n" +
+			"    Temperature\n" +
+			"        GPU Current Temp                  : 42 C\n" +
+			"        GPU Shutdown Temp                 : 90 C\n" +
+			"    Power Readings\n" +
+			"        Power Draw                        : 26.51 W\n" +
+			"        Power Limit                       : 70.00 W\n" +
+			"    Clocks\n" +
+			"        Graphics                          : 585 MHz\n" +
+			"        Memory                            : 5001 MHz\n", 0
+	}
+	// bare nvidia-smi -- summary table
+	return "" +
+		"+-----------------------------------------------------------------------------+\n" +
+		"| NVIDIA-SMI 525.85.12    Driver Version: 525.85.12    CUDA Version: 12.0   |\n" +
+		"|-------------------------------+----------------------+----------------------+\n" +
+		"| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |\n" +
+		"| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |\n" +
+		"|===============================+======================+======================|\n" +
+		"|   0  Tesla T4           Off  | 00000000:00:04.0 Off |                    0 |\n" +
+		"| N/A   42C    P0    26W /  70W |      0MiB / 15109MiB |      0%      Default |\n" +
+		"+-----------------------------------------------------------------------------+\n\n" +
+		"+-----------------------------------------------------------------------------+\n" +
+		"| Processes:                                                                  |\n" +
+		"|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |\n" +
+		"|        ID   ID                                                    Usage      |\n" +
+		"|=============================================================================|\n" +
+		"|  No running processes found                                                 |\n" +
+		"+-----------------------------------------------------------------------------+\n", 0
+}
 
 type hostnameCmd struct{}
 

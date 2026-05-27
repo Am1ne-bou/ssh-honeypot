@@ -26,6 +26,10 @@ func init() {
 	register("rmdir", noopCmd{})
 	register("kill", noopCmd{})
 	register("pkill", noopCmd{})
+	register("killall", noopCmd{})
+	register("chattr", noopCmd{})
+	register("disown", noopCmd{})
+	register("chpasswd", noopCmd{}) // reads root:pass from stdin, we don't handle stdin -- exit 0 is enough
 	register("service", serviceCmd{})
 	register("systemctl", systemctlCmd{})
 }
@@ -104,6 +108,15 @@ var fakeBinaries = map[string]string{
 	"gcc": "/usr/bin/gcc", "ssh": "/usr/bin/ssh", "scp": "/usr/bin/scp",
 	"sudo": "/usr/bin/sudo", "su": "/usr/bin/su", "apt": "/usr/bin/apt",
 	"chmod": "/usr/bin/chmod", "chown": "/usr/bin/chown",
+	"nvidia-smi": "/usr/bin/nvidia-smi",
+	"chpasswd":   "/usr/sbin/chpasswd",
+	"killall":    "/usr/bin/killall",
+	"chattr":     "/usr/bin/chattr",
+	"awk":        "/usr/bin/awk",
+	"grep":       "/usr/bin/grep",
+	"wc":         "/usr/bin/wc",
+	"head":       "/usr/bin/head",
+	"tail":       "/usr/bin/tail",
 }
 
 func (whichCmd) Run(args []string) (string, uint32) {
