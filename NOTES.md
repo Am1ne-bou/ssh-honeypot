@@ -224,3 +224,63 @@ change it to only delete when `attempts[host] >= 10` -- otherwise counter still 
   connection 10 accepted -- this is the test that caught the cleanup bug live
 
 **Verified on VPS:** attempts 1-9 rejected, attempt 10 accepted, attempt 11 rejected (reset).
+
+---
+
+### First findings + bait + scp receive
+
+**What we saw in the logs (first ~6h, Helsinki VPS):**
+
+541 auth attempts from 10 IPs. Almost all `SSH-2.0-Go` banners -- mass scanners
+written in Go, credential stuffing with dumb passwords (123456, 1, 123).
+
+Two distinct bot types once they got a shell:
+
+1. **Crypto miner recon** -- ran `uname -s -v -n -r -m`, `nproc`, `lspci | grep 3D`,
+   `uname -m`. Checking OS + CPU count + GPU. The `lspci | grep 3D` is the GPU check,
+   that's what tells it whether to deploy a miner. Ran the same script 11 times.
+
+2. **Dropper bot** -- `mkdir /lib/<random10chars>` then `scp -t -r /lib/<random10chars>/`
+   repeated 10 times with different directory names. `scp -t` is server-side SCP receive --
+   the bot was trying to upload a payload from its own machine. We returned exit 1 so all
+   10 attempts failed.
+
+**Bait added:**
+
+- `nproc` -> 8 (was "command not found")
+- `lspci` -> fake PCI list with `Tesla T4` GPU entry (3D controller line)
+- `uname -s -v -n -r -m` -> handled the multi-flag case the bot actually sends
+- Miner bot now sees a 8-core GPU machine. Should try harder.
+
+**SCP receive -- option A chosen (exit 0, capture the playbook):**
+
+`scp -t` now speaks the SCP wire protocol server-side: sends `\x00` ready byte,
+parses C/D/E headers, drains file data with `io.LimitReader`, acks each step, exits 0.
+Bot thinks upload worked -> will proceed to `chmod +x` + execute -> we see that in session.log.
+
+Shell path (bot types `scp -t` in interactive shell): `scpCmd.Run` returns exit 0 when
+`-t` flag present. Can't do the wire protocol over the line-buffered shell, but exit 0
+is enough to keep the bot moving.
+
+Rejected option B (permission denied) -- would have stopped the bot before we saw its
+next step. The point is to capture the full playbook.
+
+**Tests:**
+
+- `isSCPReceive`: 8 cases, flag in various positions
+- shell path: `-t` exits 0, no `-t` exits non-zero with "unreachable"
+- exec path: single file transfer, recursive dir, empty stream
+- `fakeChan` struct implements `ssh.Channel` with in-memory buffers
+
+**Integration test:**
+
+`verify/dropper_sim.go` -- connects to live honeypot, loops until accepted, speaks
+full SCP protocol, checks all ack bytes are `\x00`, verifies exit 0.
+Verified on VPS_IP:2222 after deploy -- accepted on attempt 6 (counter was
+partially accumulated), full exchange completed.
+
+**What to watch for next:**
+
+- `chmod +x` + execute after scp -- means the upload path worked
+- `curl`/`wget` with a real C2 URL in session.log -- that's the money finding
+- `crontab`, `systemctl` -- persistence phase
