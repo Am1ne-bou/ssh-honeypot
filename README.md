@@ -108,10 +108,11 @@ systemctl enable --now ssh-honeypot
 ## flags
 
 ```
--addr      listen address          (default :2222)
--host-key  ed25519 host key file   (default ./host.key)
--log-dir   log file directory      (default ./logs)
--max-conn  concurrent connection cap (default 100)
+-addr           listen address          (default :2222)
+-host-key       ed25519 host key file   (default ./host.key)
+-log-dir        log file directory      (default ./logs)
+-quarantine-dir payload capture dir     (default "" = disabled)
+-max-conn       concurrent connection cap (default 100)
 ```
 
 The host key is generated on first run and reused across restarts. Keeping it
@@ -135,11 +136,16 @@ Example session.log entry (command captured):
 ## analysis
 
 ```bash
-python3 analysis/stats.py /path/to/log/dir
+# per-session timeline: what each attacker did, in order
+python3 analysis/sessions.py /var/lib/honeypot/logs | less
+
+# first/last-seen per password and command; flags credential feedback loops
+python3 analysis/timeline.py /var/lib/honeypot/logs
 ```
 
-Reads the three log files and prints a report: top passwords, usernames,
-source IPs, client banners, commands, time range. Stdlib only.
+Both scripts are stdlib only. They read the JSON log files and correlate events
+by `sid` (session ID). Run them locally by copying the logs off the VPS first,
+or directly on the VPS if you've uploaded the scripts there.
 
 ## fake shell
 
@@ -147,11 +153,17 @@ The fake shell handles the most common recon commands: `whoami`, `id`, `uname`,
 `ls`, `cat`, `ps`, `ifconfig`, `curl`, `wget`, `sudo`, and ~40 others.
 It returns plausible canned output for a generic Ubuntu server.
 
+Pipes work left-to-right (`nvidia-smi -q | grep "Product Name" | wc -l` returns `1`).
+Filesystem state is per-session: `mkdir /tmp/x` then `ls /tmp` shows it. SCP uploads
+land in the session FS too -- if the bot does `chmod +x /tmp/payload` after uploading,
+that shows up in session.log.
+
+If `--quarantine-dir` is set, uploaded payloads are written to disk as
+`<sha256>-<name>.bin` (read-only, 50 MB cap).
+
 Known limitations:
 
-- pipes not interpreted (`ls | grep x` -- LHS runs, pipe lands in the log as-is)
 - no `$(cmd)` substitution, only `$VAR` expansion
-- no filesystem state -- `touch foo` succeeds but `ls` won't show it
 - network commands return canned output, no real traffic sent
 
 Bots run scripts without checking if commands actually worked, so this is

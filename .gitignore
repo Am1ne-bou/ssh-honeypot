@@ -6,3 +6,5 @@ host.key
 .idea/
 logs/
 *Zone.Identifier
+result-*.txt
+ssh-honeypot-linux
