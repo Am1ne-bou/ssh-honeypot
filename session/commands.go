@@ -117,14 +117,8 @@ func dispatch(cmd string) (string, uint32) {
 	return newSession().dispatch(cmd)
 }
 
-// dispatch runs cmd through the pipeline, feeding each stage's stdout into the next.
-func (s *Session) dispatch(cmd string) (string, uint32) {
-	cmd = strings.TrimSpace(cmd)
-	if cmd == "" {
-		return "", 0
-	}
-	cmd = expandVars(cmd)
-
+// dispatchSegment runs a single pipe pipeline (no && handling).
+func (s *Session) dispatchSegment(cmd string) (string, uint32) {
 	stages := strings.Split(cmd, "|")
 	out := ""
 	exit := uint32(0)
@@ -146,6 +140,29 @@ func (s *Session) dispatch(cmd string) (string, uint32) {
 			break
 		}
 		out, exit = impl.Run(args, out, s)
+	}
+	return out, exit
+}
+
+// dispatch runs cmd, handling && chaining and | pipelines.
+func (s *Session) dispatch(cmd string) (string, uint32) {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return "", 0
+	}
+	cmd = expandVars(cmd)
+	cmd = strings.ReplaceAll(cmd, "> /dev/null", "")
+	out := ""
+	exit := uint32(0)
+	for _, seg := range strings.Split(cmd, "&&") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		out, exit = s.dispatchSegment(seg)
+		if exit != 0 {
+			return out, exit
+		}
 	}
 	return out, exit
 }

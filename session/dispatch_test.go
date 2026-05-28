@@ -175,6 +175,49 @@ func TestSessionCatBinEcho(t *testing.T) {
 	_ = out // content is binary, just check it doesn't 404
 }
 
+func TestDispatchAnd(t *testing.T) {
+	// both sides succeed -- output is from last segment
+	out, exit := dispatch("whoami && whoami")
+	if exit != 0 {
+		t.Errorf("whoami && whoami: want exit 0, got %d", exit)
+	}
+	if strings.TrimSpace(out) != "root" {
+		t.Errorf("whoami && whoami: want 'root', got %q", out)
+	}
+}
+
+func TestDispatchAndShortCircuit(t *testing.T) {
+	// first side fails -- second side must not run
+	out, exit := dispatch("notacommand && whoami")
+	if exit == 0 {
+		t.Error("notacommand && whoami: want non-zero exit")
+	}
+	// output should be the error from notacommand, not root
+	if strings.TrimSpace(out) == "root" {
+		t.Error("notacommand && whoami: second side ran after failure")
+	}
+}
+
+func TestDispatchDiicot(t *testing.T) {
+	// exact command Diicot runs -- must return 3D controller line
+	out, exit := dispatch("lspci | egrep VGA && lspci | grep 3D")
+	if exit != 0 {
+		t.Errorf("diicot lspci pipeline: want exit 0, got %d", exit)
+	}
+	if !strings.Contains(out, "3D") {
+		t.Errorf("diicot lspci pipeline: want '3D' in output, got %q", out)
+	}
+}
+
+func TestDispatchRedirectDevNull(t *testing.T) {
+	// > /dev/null stripped -- command still runs, output discarded by shell semantics
+	// but since we strip it, echo output comes through (same as bash with no redirect)
+	_, exit := dispatch("echo 1 > /dev/null && cat /bin/echo")
+	if exit != 0 {
+		t.Errorf("echo && cat after redirect strip: want exit 0, got %d", exit)
+	}
+}
+
 func TestExpandVars(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"$HOME", "/root"},

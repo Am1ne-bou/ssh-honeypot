@@ -305,6 +305,26 @@ partially accumulated), full exchange completed.
 
 ---
 
+### && operator + redirect stripping
+
+**Picked:**
+
+-  `dispatchSegment` holds pipe logic, `dispatch` loops on `&&` segments
+- stop on first non-zero exit -- bash `&&` semantics
+- `> /dev/null` stripped before dispatch so echo-then-cat chains work
+- `egrep` registered as alias for `grep`
+
+**Why:**
+
+- Diicot runs `lspci | egrep VGA && lspci | grep 3D` -- was getting "command not found" on `egrep`, whole command failed, bot never escalated
+- ELF checker bots use `echo 1 > /dev/null && cat /bin/echo` -- same `&&` + redirect issue
+
+**Rejected:**
+
+- inlining `&&` split inside `dispatch` without helper -- harder to test
+
+---
+
 ### I-4: real pipe execution
 
 **Picked:**
@@ -360,3 +380,33 @@ partially accumulated), full exchange completed.
 
 - hardcoded path next to log-dir -- wanted operator control
 - saving to discard on any error -- kept as fallback, not default
+
+---
+
+### analysis tooling session
+
+**report.py:**
+
+- rich terminal report with ANSI colors, `--no-color` for txt output
+- hourly heatmap (ASCII bar chart)
+- kill-chain phase tagging per command: RECON / STAGE / UPLOAD / EXEC / PERSIST / CLEANUP
+- bot family fingerprinting: Diicot = lspci + nproc + scp -t to /lib/ dirs
+- session narrative: one sentence per session ("fingerprinted GPU, CPU cores. tried SCP upload 3x.")
+- sequential password pattern detection (1 -> 12 -> 123 -> 1234...)
+- credential feedback loop: IP keeps trying after first shell accept
+
+**Rejected:**
+
+- merging into sessions.py -- different output format, different audience
+
+**analyze.sh:**
+
+- local-only wrapper, one arg: log dir
+- runs all 4 scripts, result-HHMM--DD-MM naming
+- `result-*.txt` in .gitignore
+
+**Findings from logs (2026-05-28):**
+
+- 71.227.179.172: 1545 unique passwords, 1382 attempts after first shell accept -- credential feedback loop confirmed in the wild
+- 22:00 UTC spike: 1238 attempts in one hour -- coordinated spray window
+- SSH-2.0-Go dominates client banners -- scanning ecosystem is almost all Go
