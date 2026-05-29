@@ -133,7 +133,7 @@ def compute_stats(auth, sess):
     unique_ips = len({e.get("remote", ":").split(":")[0] for e in attempts})
     passwords  = Counter(e["password"] for e in attempts if "password" in e)
     commands   = [e.get("command", "") for e in sess
-                  if e.get("msg") == "shell" and "command" in e]
+                  if e.get("msg") in ("shell", "exec") and "command" in e]
     cmd_counter = Counter(c.split()[0] if c.strip() else "" for c in commands if c.strip())
     phase_counts = Counter(classify(c) for c in commands)
 

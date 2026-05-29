@@ -179,7 +179,7 @@ def render_header(auth, sess):
     accepted = sum(1 for e in auth if e.get("outcome") == "accepted")
     ips      = len({e["remote"].split(":")[0] for e in auth
                     if e.get("msg") == "auth attempt" and "remote" in e})
-    commands = sum(1 for e in sess if e.get("msg") == "shell" and "command" in e)
+    commands = sum(1 for e in sess if e.get("msg") in ("shell", "exec") and "command" in e)
 
     times = []
     for e in auth:
@@ -262,7 +262,7 @@ def render_ips(auth, sess):
     scp_count = Counter()
     for e in sess:
         cmd = e.get("command", "")
-        if e.get("msg") == "shell" and "scp" in cmd and "-t" in cmd:
+        if e.get("msg") in ("shell", "exec") and "scp" in cmd and "-t" in cmd:
             scp_count[e.get("sid", "")] += 1
     dropper_sids = {sid for sid, n in scp_count.items() if n > 0}
 
@@ -328,7 +328,7 @@ def render_sessions(auth, sess):
     # group shell events by sid
     by_sid = defaultdict(list)
     for e in sess:
-        if e.get("msg") == "shell" and "command" in e:
+        if e.get("msg") in ("shell", "exec") and "command" in e:
             by_sid[e["sid"]].append(e)
 
     # find accepted auth events (keyed by time; no sid in auth.log)
@@ -389,7 +389,7 @@ def render_alerts(auth, sess):
 
     # SCP upload attempts
     scp_sids = {e["sid"] for e in sess
-                if e.get("msg") == "shell"
+                if e.get("msg") in ("shell", "exec")
                 and "scp" in e.get("command", "")
                 and "-t" in e.get("command", "")}
     if scp_sids:
@@ -420,7 +420,7 @@ def render_alerts(auth, sess):
             lines.append(yellow(f"! high volume: {ip} -> {n} attempts (distributed spray?)"))
 
     # next kill-chain phase prediction
-    all_cmds = [e.get("command", "") for e in sess if e.get("msg") == "shell"]
+    all_cmds = [e.get("command", "") for e in sess if e.get("msg") in ("shell", "exec")]
     all_phases = set(classify(c) for c in all_cmds)
     if "UPLOAD" in all_phases and "EXEC" not in all_phases:
         lines.append(cyan("-> watch for: EXEC phase (chmod +x / ./payload)"))

