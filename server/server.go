@@ -21,9 +21,15 @@ type Options struct {
 	Session       *slog.Logger
 	Server        *slog.Logger
 	QuarantineDir string
+	AuthThreshold int
 }
 
 func Serve(ctx context.Context, opts *Options) error {
+	// zero means unset -- clamp to 1 so n >= 0 doesn't accept unconditionally
+	if opts.AuthThreshold < 1 {
+		opts.AuthThreshold = 1
+	}
+
 	var mu sync.Mutex
 	attempts := map[string]int{}
 
@@ -40,7 +46,7 @@ func Serve(ctx context.Context, opts *Options) error {
 			mu.Unlock()
 
 			outcome := "rejected"
-			if n >= 10 {
+			if n >= opts.AuthThreshold {
 				outcome = "accepted"
 			}
 			opts.Auth.Info("auth attempt",
@@ -53,7 +59,7 @@ func Serve(ctx context.Context, opts *Options) error {
 				"outcome", outcome,
 			)
 
-			if n < 10 {
+			if n < opts.AuthThreshold {
 				return nil, fmt.Errorf("invalid password")
 			}
 			return nil, nil
@@ -67,7 +73,7 @@ func Serve(ctx context.Context, opts *Options) error {
 	}
 	defer ln.Close()
 
-	opts.Server.Info("listening", "addr", opts.Addr)
+	opts.Server.Info("listening", "addr", opts.Addr, "auth_threshold", opts.AuthThreshold)
 
 	go func() {
 		<-ctx.Done()
@@ -96,7 +102,7 @@ func Serve(ctx context.Context, opts *Options) error {
 				mu.Lock()
 				// only reset after the bot reached the shell -- deleting on every
 				// connection close would wipe the counter and keep n stuck at 1
-				if attempts[host] >= 10 {
+				if attempts[host] >= opts.AuthThreshold {
 					delete(attempts, host)
 				}
 				mu.Unlock()

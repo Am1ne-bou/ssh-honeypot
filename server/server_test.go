@@ -191,12 +191,13 @@ func TestIntegrationThresholdAcrossConnections(t *testing.T) {
 	defer cancel()
 
 	go Serve(ctx, &Options{
-		Addr:    addr,
-		MaxConn: 20,
-		Signer:  signer,
-		Auth:    discard,
-		Session: discard,
-		Server:  discard,
+		Addr:          addr,
+		MaxConn:       20,
+		Signer:        signer,
+		Auth:          discard,
+		Session:       discard,
+		Server:        discard,
+		AuthThreshold: 10,
 	})
 
 	// wait for the listener to be ready

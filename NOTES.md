@@ -410,3 +410,24 @@ partially accumulated), full exchange completed.
 - 71.227.179.172: 1545 unique passwords, 1382 attempts after first shell accept -- credential feedback loop confirmed in the wild
 - 22:00 UTC spike: 1238 attempts in one hour -- coordinated spray window
 - SSH-2.0-Go dominates client banners -- scanning ecosystem is almost all Go
+
+---
+
+### auth-threshold flag + analysis period tooling
+
+**Picked:**
+
+- `AuthThreshold int` config flag, default 1 (accept immediately)
+- logs `auth_threshold` at startup in server.log -- period anchor for analysis tool
+- guard in `Serve()`: clamp to 1 if unset, avoids silent "n >= 0 always true" footgun
+- analysis tool will split log periods by reading the "listening" events in server.log
+
+**Why threshold=1 now:**
+
+- data from VPS shows most IPs try exactly once then leave
+- threshold=10 was harvesting passwords but missing all post-auth commands from single-shot bots
+- keeping the flag so we can flip back to 10 and compare credential spray data vs shell data
+
+**Rejected:**
+
+- hardcoding 1 -- wanted the option to go back without a code change

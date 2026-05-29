@@ -47,6 +47,7 @@ func main() {
 		Session:       logs.Session,
 		Server:        logs.Server,
 		QuarantineDir: cfg.QuarantineDir,
+		AuthThreshold: cfg.AuthThreshold,
 	}
 
 	if err := server.Serve(ctx, opts); err != nil {

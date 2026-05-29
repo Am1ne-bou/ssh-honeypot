@@ -31,6 +31,7 @@ run "report"     "$SCRIPTS/report.py"   "$LOG_DIR" --no-color
 run "full-stats" "$SCRIPTS/stats.py"    --full "$LOG_DIR"
 run "session"    "$SCRIPTS/sessions.py" "$LOG_DIR"
 run "timeline"   "$SCRIPTS/timeline.py" "$LOG_DIR"
+run "periods"    "$SCRIPTS/periods.py"  "$LOG_DIR" --no-color
 
 echo ""
 ls -lh ${PREFIX}-*.txt
