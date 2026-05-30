@@ -298,9 +298,9 @@ captured within 17 minutes of deploying.
 
 **The C2 payload at 14.46.136.77/sh** -- pipes into sh, the honeypot can't make real HTTP calls.
 
-**The amd64 binary content** -- the echo hex chunks are all logged but not decoded yet.
-To actually get the binary: concatenate all the hex chunks and decode. Would reveal what
-the miner actually is.
+**The 4 binaries from the ELF injector session** -- I can reconstruct them from session.log
+(the hex chunks are all there), and can also download them directly from the C2 servers which
+are still live. But I haven't done a proper analysis yet.
 
 **Interactive shell SCP** -- now fixed. Next SCP dropper session might upload for real.
 

