@@ -218,6 +218,42 @@ func TestDispatchRedirectDevNull(t *testing.T) {
 	}
 }
 
+func TestArithExpansion(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"echo $((7*191+3))", "1340\n"},
+		{"echo $((2+2))", "4\n"},
+		{"echo $((10*10))", "100\n"},
+		{"echo $((100-1))", "99\n"},
+	}
+	for _, c := range cases {
+		out, _ := dispatch(c.in)
+		if out != c.want {
+			t.Errorf("dispatch(%q): want %q, got %q", c.in, c.want, out)
+		}
+	}
+}
+
+func TestUnameNewFlags(t *testing.T) {
+	// family 9 -- minimal OS scanner
+	out, _ := dispatch("uname -s -m")
+	if out != "Linux x86_64\n" {
+		t.Errorf("uname -s -m: want 'Linux x86_64', got %q", out)
+	}
+	// family 8 -- SSHCHK
+	out, _ = dispatch("uname -srm")
+	if out != "Linux 6.8.0-49-generic x86_64\n" {
+		t.Errorf("uname -srm: want kernel+release+arch, got %q", out)
+	}
+}
+
+func TestAwkNRCondition(t *testing.T) {
+	// SSHCHK uses: df -P / | awk 'NR==2{print $1}'
+	out, _ := dispatch("df -P / | awk 'NR==2{print $1}'")
+	if strings.TrimSpace(out) != "/dev/vda1" {
+		t.Errorf("df -P / | awk NR==2: want '/dev/vda1', got %q", out)
+	}
+}
+
 func TestExpandVars(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"$HOME", "/root"},

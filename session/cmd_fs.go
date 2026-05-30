@@ -157,7 +157,18 @@ func (pwdCmd) Run(_ []string, _ string, sess *Session) (string, uint32) {
 type dfCmd struct{}
 
 func (dfCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
-	if len(args) > 0 && args[0] == "-h" {
+	hasP := false
+	hasH := false
+	for _, a := range args {
+		if a == "-P" { hasP = true }
+		if a == "-h" { hasH = true }
+	}
+	if hasP {
+		// POSIX format -- used by SSHCHK: df -P / | awk 'NR==2{print $1}'
+		return "Filesystem     512-blocks      Used Available Capacity Mounted on\n" +
+			"/dev/vda1        81163128  16469424  60652072      22% /\n", 0
+	}
+	if hasH {
 		return "Filesystem      Size  Used Avail Use% Mounted on\n" +
 			"/dev/vda1        39G  7.9G   30G  22% /\n" +
 			"tmpfs           200M     0  200M   0% /run\n", 0

@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -25,28 +26,43 @@ func init() {
 // Full awk would need an interpreter -- we just cover {print $N} and {printf $N}.
 type awkCmd struct{}
 
+var nrRe = regexp.MustCompile(`^NR==(\d+)\{`)
+
 func (awkCmd) Run(args []string, stdin string, _ *Session) (string, uint32) {
 	if len(args) == 0 {
-		// no script -- pass stdin through (awk with no args reads stdin line by line)
 		return stdin, 0
 	}
-	script := args[0]
+	// join all args and strip surrounding quotes -- shell splits 'NR==2{print $1}' into two tokens
+	script := strings.Trim(strings.Join(args, " "), "'\"")
+	_ = args[0] // suppress unused warning if only one arg
 	if !strings.Contains(script, "$") {
 		return stdin, 0
 	}
-	// only handle $1 (most common in recon scripts)
 	if !strings.Contains(script, "$1") {
 		return stdin, 0
 	}
 	printf := strings.Contains(script, "printf")
+
+	// check for NR==N condition -- only apply to that line number (1-indexed)
+	targetLine := -1
+	if m := nrRe.FindStringSubmatch(script); m != nil {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			targetLine = n
+		}
+	}
+
 	var b strings.Builder
-	for _, line := range strings.Split(strings.TrimRight(stdin, "\n"), "\n") {
+	lines := strings.Split(strings.TrimRight(stdin, "\n"), "\n")
+	for i, line := range lines {
+		if targetLine > 0 && i+1 != targetLine {
+			continue
+		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
 		if printf {
-			b.WriteString(fields[0]) // printf has no implicit newline
+			b.WriteString(fields[0])
 		} else {
 			fmt.Fprintln(&b, fields[0])
 		}

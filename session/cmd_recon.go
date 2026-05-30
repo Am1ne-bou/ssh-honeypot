@@ -107,6 +107,12 @@ func (unameCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 		return "Linux ubuntu 6.8.0-49-generic #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux\n", 0
 	case "-s-v-n-r-m":
 		return "Linux #49-Ubuntu SMP PREEMPT_DYNAMIC Mon Feb 24 14:24:20 UTC 2025 ubuntu 6.8.0-49-generic x86_64\n", 0
+	case "-srm":
+		// uname -srm: kernel-name release machine -- used by SSHCHK family
+		return "Linux 6.8.0-49-generic x86_64\n", 0
+	case "-s-m", "-sm":
+		// uname -s -m: kernel-name machine -- used by minimal OS scanner (family 9)
+		return "Linux x86_64\n", 0
 	case "-r":
 		return "6.8.0-49-generic\n", 0
 	case "-m":
