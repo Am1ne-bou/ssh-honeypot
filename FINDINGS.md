@@ -1,14 +1,14 @@
-# Findings -- 75h live on a public VPS
+# Findings -- 93h live on a public VPS
 
 Helsinki VPS, port 22 redirected to the honeypot. No prior reputation, fresh IP.
-Data collected: 2026-05-26 11:32 UTC to 2026-05-29 15:00 UTC.
+Data collected: 2026-05-26 11:32 UTC to 2026-05-30 09:10 UTC.
 
 ```
-3148 auth attempts
- 156 unique source IPs
+3297 auth attempts
+ 180 unique source IPs
 1928 unique passwords tried
- 360 sessions accepted
- 742 commands captured (across 235+ sessions)
+ 509 sessions accepted
+ 880 commands captured
 ```
 
 ---
@@ -223,6 +223,86 @@ This bot ran via SSH exec channel (not an interactive shell). The exec channel i
 SSH's mechanism for running a single command without opening a terminal session.
 Faster, cleaner, and invisible to any logging that only watches the interactive shell.
 Our original analysis scripts missed every command from this family entirely.
+
+---
+
+### 6. w.sh / astats -- dual persistence bot
+
+First appeared 2026-05-29 14:17 UTC under threshold=1. Hits every ~30-45min from
+different IPs -- botnet spray. Most sophisticated persistence in the dataset.
+
+Kill chain:
+1. Find writable dir: tries /dev/shm, /tmp, /var/run, /mnt, /root, / in order
+2. Drop w.sh to /tmp, chmod +x
+3. Cron persistence: adds /tmp/w.sh "astats" "netai" "kstats" to crontab
+4. Systemd user service: ~/.config/systemd/user/watcher-netai.service
+5. Check if already running: ps aux | grep astats
+6. Drop miner binary named astats to /dev/shm or /tmp
+
+Two persistence mechanisms simultaneously -- cron + systemd. If one is removed the
+other revives it. Process names (astats, netai, kstats) chosen to look like monitoring
+tools in ps aux. Zero sessions before threshold=1 -- confirmed single-shot family.
+
+---
+
+### 7. VPS infrastructure scout
+
+Two sessions: 2026-05-29 09:48 and 14:55. 35 commands per session, no payload deployed.
+Objective: assess the machine for deployment suitability.
+
+Covers: identity (id, whoami), user list (/etc/passwd, /etc/shadow), CPU model, distro
+detection (which apt/yum/pacman/zypper), network (netstat, ip addr, ss), write permission
+test (echo > /tmp/test_XXXX then rm), outbound connectivity (ping 8.8.8.8), running
+services (systemctl, ps), disk I/O benchmark (dd bs=1M count=10), shell history.
+
+The dd benchmark is the most telling: the bot measures disk throughput before deciding
+to deploy. Ended without payload -- machine failed some criterion (no GPU, wrong distro,
+disk too slow) or is a pure probe that reports back to a queue.
+
+---
+
+### 8. SSHCHK -- C2 liveness checker
+
+Two sessions on 2026-05-30 02:20 and 02:23 UTC, different IPs, same tool.
+
+```bash
+echo SSHCHK_5718926f9304_BEGIN; uname -srm; echo $((7*191+3)); hostname; \
+df -P / 2>/dev/null | awk 'NR==2{print $1}'; echo SSHCHK_5718926f9304_END
+```
+
+The most structured C2 interaction in the dataset. Four components:
+
+**BEGIN/END framing** -- the C2 reads output and extracts everything between the markers.
+The random hex token (5718926f9304) is unique per session -- it correlates this output
+to this exact connection and prevents replay attacks. A honeypot that cached output
+would return a mismatched token and be detected.
+
+**`uname -srm`** -- OS kernel name, release, machine arch in one call. Tighter than
+`uname -a` -- only what the C2 needs.
+
+**`echo $((7*191+3))`** -- arithmetic proof-of-work. The shell must evaluate the
+expression and return 1340. A static replay returns the wrong number. A broken shell
+returns nothing. This confirms a live, working shell before the C2 sends any payload.
+
+**`df -P / | awk 'NR==2{print $1}'`** -- root filesystem device name (/dev/sda1 etc).
+Disk presence check -- bare VMs sometimes have unusual layouts.
+
+No follow-up commands after this. The C2 reads the structured output and decides
+what to do externally. This bot is a pure inventory probe.
+
+---
+
+### 9. Minimal OS scanner
+
+Two sessions on 2026-05-30 06:03 and 07:39 UTC. SSH-2.0-Go. Different IPs. One command:
+
+```bash
+uname -s -m
+```
+
+Returns "Linux x86_64". Bot disconnects immediately. Lightest possible post-auth probe --
+confirms OS and architecture, exits. Either a cataloguing scanner building an internet
+map, or a first-stage probe before a payload bot follows up when conditions are right.
 
 ---
 
