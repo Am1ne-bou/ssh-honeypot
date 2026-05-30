@@ -12,7 +12,7 @@ import (
 
 const prompt = "root@ubuntu:~# "
 
-func runShell(ch ssh.Channel, log *slog.Logger, sess *Session) {
+func runShell(ch ssh.Channel, log *slog.Logger, quarantineDir string, sess *Session) {
 	defer ch.Close()
 
 	// bots that connect and just sit there hold a goroutine forever -- drop after 5min idle
@@ -66,6 +66,11 @@ func runShell(ch ssh.Channel, log *slog.Logger, sess *Session) {
 				status := make([]byte, 4)
 				binary.BigEndian.PutUint32(status, 0)
 				ch.SendRequest("exit-status", false, status)
+				return
+			}
+			// scp -t needs raw channel access for the wire protocol -- can't go through dispatch
+			if isSCPReceive(cmd) {
+				runSCPReceive(ch, cmd, log, quarantineDir, sess)
 				return
 			}
 			out, _ := sess.dispatch(cmd)

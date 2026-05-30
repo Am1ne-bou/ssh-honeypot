@@ -212,9 +212,21 @@ func (psCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 
 type crontabCmd struct{}
 
-func (crontabCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
-	if len(args) > 0 && args[0] == "-l" {
-		return "no crontab for root\n", 1
+func (crontabCmd) Run(args []string, stdin string, sess *Session) (string, uint32) {
+	if len(args) == 0 || args[0] == "-" {
+		// echo "..." | crontab - or plain crontab (read from stdin)
+		sess.cron = strings.TrimRight(stdin, "\n")
+		return "", 0
+	}
+	switch args[0] {
+	case "-l":
+		if sess.cron == "" {
+			return "no crontab for root\n", 1
+		}
+		return sess.cron + "\n", 0
+	case "-r":
+		sess.cron = ""
+		return "", 0
 	}
 	return "", 0
 }

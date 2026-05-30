@@ -232,3 +232,38 @@ func TestExpandVars(t *testing.T) {
 		}
 	}
 }
+
+func TestCrontabStateful(t *testing.T) {
+	sess := newSession()
+
+	// empty by default -- exit 1, "no crontab"
+	out, exit := sess.dispatch("crontab -l")
+	if exit != 1 {
+		t.Errorf("crontab -l empty: want exit 1, got %d", exit)
+	}
+	if !strings.Contains(out, "no crontab") {
+		t.Errorf("crontab -l empty: want 'no crontab', got %q", out)
+	}
+
+	// write via pipe: echo "entry" | crontab -
+	sess.dispatch("echo '@reboot /tmp/w.sh' | crontab -")
+
+	// -l now returns the entry
+	out, exit = sess.dispatch("crontab -l")
+	if exit != 0 {
+		t.Errorf("crontab -l after write: want exit 0, got %d", exit)
+	}
+	if !strings.Contains(out, "/tmp/w.sh") {
+		t.Errorf("crontab -l after write: want entry in output, got %q", out)
+	}
+
+	// -r clears it
+	sess.dispatch("crontab -r")
+	out, exit = sess.dispatch("crontab -l")
+	if exit != 1 {
+		t.Errorf("crontab -l after -r: want exit 1, got %d", exit)
+	}
+	if !strings.Contains(out, "no crontab") {
+		t.Errorf("crontab -l after -r: want 'no crontab', got %q", out)
+	}
+}

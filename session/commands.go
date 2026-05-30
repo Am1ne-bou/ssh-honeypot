@@ -21,6 +21,7 @@ type Session struct {
 	cwd  string
 	fs   map[string][]byte // virtual filesystem: absolute path -> content
 	dirs map[string]bool   // which directories exist
+	cron string            // per-session crontab content
 }
 
 func newSession() *Session {

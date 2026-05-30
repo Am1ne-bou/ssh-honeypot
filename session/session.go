@@ -78,7 +78,7 @@ func handleChannel(ch ssh.Channel, reqs <-chan *ssh.Request, log *slog.Logger, q
 				req.Reply(true, nil)
 			}
 			go drainRequests(reqs, log)
-			runShell(ch, log, sess)
+			runShell(ch, log, quarantineDir, sess)
 			return
 		case "exec":
 			var p execReq
@@ -131,12 +131,7 @@ func logRequest(req *ssh.Request, log *slog.Logger) {
 			"rows", p.Rows,
 		)
 	case "exec":
-		var p execReq
-		if err := ssh.Unmarshal(req.Payload, &p); err != nil {
-			log.Info("channel request", "type", req.Type, "parse_err", err)
-			return
-		}
-		log.Info("channel request", "type", req.Type, "command", p.Command)
+		// logged by runExec with msg="exec" -- skip here to avoid double-logging
 	case "env":
 		var p envReq
 		if err := ssh.Unmarshal(req.Payload, &p); err != nil {

