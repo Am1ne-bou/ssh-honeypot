@@ -9,8 +9,10 @@ Usage: python3 analysis/stats.py [log_dir]
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter
+from datetime import datetime
 
 
 def load_jsonlines(path):
@@ -59,6 +61,31 @@ def strip_port(remote):
     return remote.rsplit(":", 1)[0]
 
 
+SPRAY_MIN_IPS    = 3
+SPRAY_WINDOW_MINS = 60
+
+# fingerprints keyed by family name; tested against raw command strings
+FAMILIES = [
+    ("ELF echo injector", lambda c: bool(re.search(r"echo -e -n.*>> /tmp/", c))),
+    ("Diicot GPU miner",  lambda c: "lspci | egrep VGA" in c),
+    ("C2 dropper",        lambda c: "14.46.136.77" in c),
+    ("astats dropper",    lambda c: "cat > astats" in c),
+    ("VPS scout",         lambda c: "awk '{printf $1}'" in c),
+    ("SSHCHK",            lambda c: "echo" in c and r"\x6F\x6B" in c),
+    ("minimal scanner",   lambda c: c.strip() in ("uname -s -m", "uname -m", "uname -s")),
+    ("password changer",  lambda c: "chpasswd" in c or c.strip() == "passwd"),
+]
+
+
+def parse_ts(s):
+    """Parse an ISO 8601 timestamp, tolerating nanosecond precision."""
+    s = s.rstrip("Z")
+    if "." in s:
+        base, frac = s.split(".", 1)
+        s = base + "." + frac[:6]
+    return datetime.fromisoformat(s + "+00:00")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze SSH honeypot JSON log files."
@@ -88,6 +115,9 @@ def main():
     accepted    = 0
     rejected    = 0
     timestamps  = []
+    spray_buckets = {}  # (pw, user) -> list of (ts_str, ip)
+    echo_targets  = Counter()  # /tmp/X -> chunk count
+    family_sids   = {name: set() for name, _ in FAMILIES}
 
     # --- auth.log ---
     for rec in load_jsonlines(auth_path):
@@ -120,6 +150,12 @@ def main():
         if ts:
             timestamps.append(ts)
 
+        if pw and user and remote and ts:
+            key = (pw, user)
+            if key not in spray_buckets:
+                spray_buckets[key] = []
+            spray_buckets[key].append((ts, strip_port(remote)))
+
     # --- session.log ---
     # msg=="shell": attacker typed a line in the fake shell, "command" has the input
     # msg=="exec":  attacker sent an exec request directly (scp, rsync, one-shot cmds)
@@ -133,6 +169,13 @@ def main():
             cmd = rec.get("command", "").strip()
             if cmd:
                 commands[cmd] += 1
+                m = re.search(r">> (/tmp/\S+)", cmd)
+                if m:
+                    echo_targets[m.group(1)] += 1
+                sid = rec.get("sid", "")
+                for name, test in FAMILIES:
+                    if test(cmd):
+                        family_sids[name].add(sid)
 
     # --- server.log (timestamps only, for time range) ---
     for rec in load_jsonlines(server_path):
@@ -181,6 +224,57 @@ def main():
         print("  Latest   : %s" % timestamps[-1])
     else:
         print("  (no timestamps found)")
+
+    heading("ECHO INJECTION TARGETS")
+    if echo_targets:
+        print_top(echo_targets, None)
+        print("  --")
+        print("  total chunks : %d" % sum(echo_targets.values()))
+    else:
+        print("  (none)")
+
+    heading("CREDENTIAL SPRAYS  (>=%d IPs in <=%d min window)" % (SPRAY_MIN_IPS, SPRAY_WINDOW_MINS))
+    # sliding window: find tightest burst per credential, not just total span
+    window_secs = SPRAY_WINDOW_MINS * 60
+    sprays = []
+    for (pw, user), events in spray_buckets.items():
+        if len(events) < SPRAY_MIN_IPS:
+            continue
+        parsed = sorted((parse_ts(ts).timestamp(), ip) for ts, ip in events)
+        ip_counts = {}
+        best_n = 0
+        best_span = 0.0
+        left = 0
+        for right, (epoch, ip) in enumerate(parsed):
+            ip_counts[ip] = ip_counts.get(ip, 0) + 1
+            while epoch - parsed[left][0] > window_secs:
+                old_ip = parsed[left][1]
+                ip_counts[old_ip] -= 1
+                if ip_counts[old_ip] == 0:
+                    del ip_counts[old_ip]
+                left += 1
+            n = len(ip_counts)
+            if n > best_n:
+                best_n = n
+                best_span = (epoch - parsed[left][0]) / 60.0
+        if best_n >= SPRAY_MIN_IPS:
+            sprays.append((best_n, best_span, user, pw))
+    sprays.sort(reverse=True)
+    if sprays:
+        for n_ips, mins, user, pw in sprays:
+            print("  %3d IPs  %5.0f min  %s / %s" % (n_ips, mins, user, pw))
+    else:
+        print("  (none)")
+
+    heading("ATTACK FAMILIES (unique sessions)")
+    active = [(name, len(sids)) for name, sids in family_sids.items() if sids]
+    active.sort(key=lambda x: x[1], reverse=True)
+    if active:
+        name_w = max(len(n) for n, _ in active)
+        for name, n in active:
+            print("  %-*s  %d sessions" % (name_w, name, n))
+    else:
+        print("  (none identified)")
 
     print()
 
