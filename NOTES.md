@@ -413,6 +413,82 @@ partially accumulated), full exchange completed.
 
 ---
 
+### quarantine audit + SCP bug + w.sh bot (2026-05-30)
+
+**Quarantine IS enabled and working -- but captured 0 real attacker payloads.**
+
+systemctl output truncated the ExecStart line, the --quarantine-dir flag is present.
+One file captured: scp_test_payload.sh.bin (27 bytes, 2026-05-28 22:39) -- our own
+dropper_sim.go test run. Mode r--------, honeypot-owned. That is correct behavior.
+
+**SCP sessions breakdown (verified by inspecting session.log msg types per sid):**
+
+Session d22ff677d5 (real attacker, 2026-05-26 17:50, 11 SCP attempts):
+  msgs: channel request, exec -- only. NO scp receive, NO scp file, NO scp data drained.
+  The SCP wire protocol was never spoken.
+
+Sessions e30b8bd4ff, 2d1b80adfb (dropper_sim.go, 2026-05-27 00:49):
+  msgs: channel request, exec, scp receive, scp file, scp data drained.
+  Wire protocol was spoken. No payload saved -- quarantine not enabled at that point.
+
+Session 84e0a852af (dropper_sim.go, 2026-05-28 22:39):
+  msgs: channel request, exec, scp receive, scp file, scp payload saved, scp data drained.
+  Wire protocol spoken + quarantine enabled = only real captured file.
+
+The 4 sessions in report.py alert = 1 real attacker + 3 our own tests.
+
+**Bug found: interactive shell SCP path is broken.**
+
+When the real attacker bot typed `scp -t -r /path/` at the interactive shell prompt,
+the shell handler called scpCmd which returns exit 0 -- but never sends the \x00 ready
+byte that the SCP protocol requires before the client sends file data. The attacker's
+scp client on the other end was waiting for that byte, got nothing, timed out or hung.
+
+The upload never started. The bot thought it succeeded (exit 0) but the protocol
+handshake was incomplete. This is why 0 real payloads were captured.
+
+The exec channel path (dropper_sim.go) correctly calls runSCPReceive which speaks the
+full wire protocol. The shell path does not. These are two different code paths.
+
+Fix needed: when `scp -t` comes through the interactive shell, engage the wire protocol
+handler (runSCPReceive) instead of returning a plain exit 0.
+
+**New bot family: w.sh / astats (appeared 2026-05-29 14:17 under threshold=1)**
+
+Most sophisticated persistence seen. Botnet spray, different IP every ~30-45min.
+
+Kill chain:
+1. Find writable dir: tries /dev/shm, /tmp, /var/run, /mnt, /root, / in order
+2. Drop w.sh to /tmp, chmod +x
+3. Cron persistence: adds /tmp/w.sh "astats" "netai" "kstats" to crontab
+4. Systemd user service: ~/.config/systemd/user/watcher-netai.service
+5. Check if already running: ps aux | grep astats
+6. Drop miner binary named astats to /dev/shm or /tmp
+
+Two persistence mechanisms simultaneously. Process names (astats, netai, kstats) look
+like monitoring tools in ps aux. Zero sessions before threshold=1 -- single-shot family.
+
+**Period 8 numbers after 22h (87.6h total):**
+- 143 attempts, 41 IPs, 27 single-shot (66%), 143 accepted, 234 commands
+- +3800% commands vs period 7, +1688% accepted, +440% single-shot
+- kill-chain: RECON=119 OTHER=75 STAGE=24 EXEC=12 PERSIST=4
+
+**Bugs to fix (next session):**
+
+- Interactive shell SCP path: returns exit 0 without wire protocol -- bots using interactive
+  shell cannot actually upload. Fix: call runSCPReceive from shell dispatch when scp -t seen.
+- Double-logging: every exec command logs as both "channel request" and "exec". Scripts dedup
+  but log is 2x larger than needed.
+- crontab is a noop: w.sh bot checks crontab -l to see if its entry exists. A stateful
+  crontab would reveal more of the bot's dedup logic.
+
+**Experiments worth running (next session):**
+
+- Fake wget/curl logging the URL argument: C2 dropper at 14.46.136.77/sh hits every hour.
+- Switch back to threshold=10 for 48h: give the blog post a clean controlled comparison.
+
+---
+
 ### full session analysis -- bot families (2026-05-29)
 
 **687 unique commands, 235 sessions, 72h total.**
