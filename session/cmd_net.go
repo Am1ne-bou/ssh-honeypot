@@ -104,7 +104,7 @@ func (pingCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 
 type curlCmd struct{}
 
-func (curlCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
+func (curlCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	url := ""
 	for _, a := range args {
 		if len(a) > 0 && a[0] != '-' {
@@ -115,12 +115,15 @@ func (curlCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	if url == "" {
 		return "curl: try 'curl --help' or 'curl --manual' for more information\n", 2
 	}
+	if sess != nil && sess.log != nil {
+		sess.log.Info("curl fetch", "url", url)
+	}
 	return "curl: (7) Failed to connect to " + url + ": Connection refused\n", 7
 }
 
 type wgetCmd struct{}
 
-func (wgetCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
+func (wgetCmd) Run(args []string, _ string, sess *Session) (string, uint32) {
 	url := ""
 	for _, a := range args {
 		if len(a) > 0 && a[0] != '-' {
@@ -130,6 +133,9 @@ func (wgetCmd) Run(args []string, _ string, _ *Session) (string, uint32) {
 	}
 	if url == "" {
 		return "wget: missing URL\n", 1
+	}
+	if sess != nil && sess.log != nil {
+		sess.log.Info("wget fetch", "url", url)
 	}
 	return "--2026-04-25 14:23:01--  " + url + "\n" +
 		"Resolving host... failed: Temporary failure in name resolution.\n" +

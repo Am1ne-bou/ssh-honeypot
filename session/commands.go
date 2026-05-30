@@ -1,8 +1,12 @@
 package session
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -22,6 +26,7 @@ type Session struct {
 	fs   map[string][]byte // virtual filesystem: absolute path -> content
 	dirs map[string]bool   // which directories exist
 	cron string            // per-session crontab content
+	log  *slog.Logger      // for commands that need to log (wget, curl URL capture)
 }
 
 func newSession() *Session {
@@ -107,8 +112,122 @@ func register(name string, c Cmd) {
 	registry[name] = c
 }
 
+var arithRe = regexp.MustCompile(`\$\(\(([^)]+)\)\)`)
+
+// expandArith replaces $((expr)) with the evaluated integer result.
+// handles +, -, *, / with correct precedence via recursive descent.
+func expandArith(s string) string {
+	return arithRe.ReplaceAllStringFunc(s, func(m string) string {
+		inner := arithRe.FindStringSubmatch(m)[1]
+		v, err := evalArith(strings.TrimSpace(inner))
+		if err != nil {
+			return m // leave untouched on parse error
+		}
+		return fmt.Sprintf("%d", v)
+	})
+}
+
+// evalArith is a minimal recursive descent parser for integer arithmetic.
+func evalArith(expr string) (int64, error) {
+	p := &arithParser{s: strings.TrimSpace(expr)}
+	v, err := p.parseAdd()
+	if err != nil || p.pos < len(p.s) {
+		return 0, fmt.Errorf("parse error")
+	}
+	return v, nil
+}
+
+type arithParser struct {
+	s   string
+	pos int
+}
+
+func (p *arithParser) peek() byte {
+	for p.pos < len(p.s) && p.s[p.pos] == ' ' {
+		p.pos++
+	}
+	if p.pos >= len(p.s) {
+		return 0
+	}
+	return p.s[p.pos]
+}
+
+func (p *arithParser) parseAdd() (int64, error) {
+	left, err := p.parseMul()
+	if err != nil {
+		return 0, err
+	}
+	for {
+		c := p.peek()
+		if c != '+' && c != '-' {
+			return left, nil
+		}
+		p.pos++
+		right, err := p.parseMul()
+		if err != nil {
+			return 0, err
+		}
+		if c == '+' {
+			left += right
+		} else {
+			left -= right
+		}
+	}
+}
+
+func (p *arithParser) parseMul() (int64, error) {
+	left, err := p.parseNum()
+	if err != nil {
+		return 0, err
+	}
+	for {
+		c := p.peek()
+		if c != '*' && c != '/' {
+			return left, nil
+		}
+		p.pos++
+		right, err := p.parseNum()
+		if err != nil {
+			return 0, err
+		}
+		if c == '*' {
+			left *= right
+		} else {
+			if right == 0 {
+				return 0, fmt.Errorf("div by zero")
+			}
+			left /= right
+		}
+	}
+}
+
+func (p *arithParser) parseNum() (int64, error) {
+	for p.pos < len(p.s) && p.s[p.pos] == ' ' {
+		p.pos++
+	}
+	if p.pos >= len(p.s) {
+		return 0, fmt.Errorf("unexpected end")
+	}
+	start := p.pos
+	if p.s[p.pos] == '-' {
+		p.pos++
+	}
+	for p.pos < len(p.s) && p.s[p.pos] >= '0' && p.s[p.pos] <= '9' {
+		p.pos++
+	}
+	if p.pos == start {
+		return 0, fmt.Errorf("expected number")
+	}
+	return strconv.ParseInt(p.s[start:p.pos], 10, 64)
+}
+
 func expandVars(s string) string {
+	s = expandArith(s)
 	return os.Expand(s, func(k string) string {
+		// $1, $2 etc are awk/positional field references -- preserve them
+		if _, err := strconv.Atoi(k); err == nil {
+			return "$" + k
+		}
 		return fakeEnv[k] // unset -> "" like bash
 	})
 }

@@ -21,6 +21,7 @@ func Handle(conn net.Conn, cfg *ssh.ServerConfig, log *slog.Logger, quarantineDi
 	defer conn.Close()
 
 	log = log.With("sid", newSID())
+	sess.log = log
 
 	sconn, chans, reqs, err := ssh.NewServerConn(conn, cfg)
 	if err != nil {
