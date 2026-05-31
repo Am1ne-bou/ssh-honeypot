@@ -8,11 +8,11 @@ accepts attackers into a fake Linux shell, and records everything they do.
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (95+ hours, Helsinki VPS)
+## findings (121+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-3316 auth attempts from 181 source IPs. 10 attack families identified.
+3514 auth attempts from 204 source IPs. 11 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
 Top passwords: `123456`, `admin`, `postgres`, `password`, `1234`.
@@ -56,6 +56,11 @@ kswpad -- 1.2MB, ELF 32-bit x86
 linux  -- 1.3MB, ELF 32-bit x86, UPX packed
 ```
 I still need to properly analyse them - planning to use Ghidra learn it first but when i will have more time.
+
+**11. Meow dropper** -- downloads `meow` (x86) and `meowarm64` (ARM) from a single C2,
+creates two backdoor sudo users (`admin1`, `user1`) with password `modzmodz`, writes
+a root credential string to `/tmp/mew`. Entire kill chain in one exec command.
+Binary analysis pending.
 
 ---
 

