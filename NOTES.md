@@ -807,3 +807,25 @@ executed, deleted, then moved to the next. 43,058 echo chunks total across all 4
 
 i have all 4 binaries i can reconstructe them from the session logs (amd64, kal64, kswpad, linux).
 idk how to properly analyse them yet
+
+---
+
+### session 2026-05-31 morning
+
+Set up notify.sh + cron (every 4h, aligned to 05:43 UTC). Pulls logs from VPS, sends HTML diff email via notify.py. stats.py output too large for Gmail raw -- trimmed to summary + top sections before sending.
+
+Family 10 hit twice today. Session c523e246ab55: started May 30 23:29 UTC (log rotated under it), ended 00:38 UTC -- full 1h 9min, not 38min as today's log suggested. Lesson: always check .gz archive. Session eadedac033be: started 09:37 Rabat, same 4-binary kill chain (amd64 -> kal64 -> kswpad -> linux), same two C2s but /s/ path instead of /b/. Still running at close (1h 18min+).
+
+Family 11 (meow dropper) confirmed: two hits at 02:09 and 02:12 Rabat, C2 34.11.111.237, backdoor users admin1+user1 with modzmodz, /tmp/mew differs between hits. Not yet analysed.
+
+---
+
+### ELF echo injector session -- 2026-05-31
+
+Session c523e246ab55 looked like 38 minutes (today's log only). Pulled yesterday's rotated log (session.log.1.gz) and found the real start. Full session: 00:29 to 01:38 Rabat = 1h 9min. Log rotation at midnight UTC split it in half. Lesson: always check the .gz archive before reporting session duration.
+
+---
+
+### TODO: meow dropper (family 11) -- 2026-05-31
+
+New family appeared today. Downloads meow + meowarm64 from 34.11.111.237, creates backdoor sudo users (admin1, user1) with password modzmodz, changes current user password, writes root credential to /tmp/mew. Two hits, different trailing password (root:webserver vs root:fuck123) -- same C2, two operators or parameterized campaign. Analyse the binary and the /tmp/mew credential harvesting logic.
