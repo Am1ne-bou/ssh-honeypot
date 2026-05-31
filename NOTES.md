@@ -875,3 +875,56 @@ what /tmp/mew is used for (credential exfil? local storage?), who runs this camp
 
 TODO: download meow from 34.11.111.237 if still live, strings + file + readelf, check
 if C2 is on any blocklists.
+
+---
+
+### 2026-05-31 afternoon pull
+
+eadedac033be (family 10, second session today): started 08:37 Rabat, ended 10:58 Rabat.
+1h21min, 43,314 log lines. Same 4-binary sequence (amd64 -> kal64 -> kswpad -> linux),
+same two C2 IPs, path changed from /b/ to /s/. Routine hit at this point.
+
+Family 11 (meow dropper) also hit twice again today (01:09 and 01:12 Rabat), same C2.
+Starting to look like a daily visitor.
+
+Full merged dataset (server.log.1.gz + live logs): 124h, 3,526 attempts, 204 IPs,
+738 accepted, 126,063 commands. Period 9 alone has 125,168 commands -- 124,976 are echo
+chunks from family 10. server.log empty again (no restart since May 30 12:01 Rabat),
+merged by pulling .gz alongside .log.
+
+---
+
+### blog post -- best replay.py sessions per family
+
+Run: `python3 analysis/replay.py <merged-log-dir> --session <SID>`
+(drop --no-color for the screenshot, colors make it readable)
+
+```
+F1  credential stuffing    -- no shell commands; use report.py top-passwords screenshot instead
+                              IP 71.227.179.172: 1545 attempts, feedback loop visible in auth.log
+F2  Diicot GPU miner       -- dc727dd9b39f   10 cmds, full recon + deploy chain, chattr line is the hook
+F3  SCP dropper            -- d22ff677d549   22 cmds, 11 mkdir+scp pairs, systematic dir bruteforce
+F4  password changer       -- 29e4813a04ad   4 cmds: uname -> cat /etc/passwd -> passwd -> chpasswd
+F5  C2 dropper (fileless)  -- a7a62f0046ee   auth_ok beacon + wget|sh pipeline, first hit 2026-05-29 07:56
+F6  w.sh / astats          -- 95bd06bfef71   w.sh drop + cron + systemd + astats miner, full persistence chain
+F7  VPS infrastructure     -- e1877e76a176   35 cmds: apt/yum/pacman/zypper + dd benchmark + ping 8.8.8.8
+F8  SSHCHK liveness check  -- f63b5f809061   BEGIN/END token + $((7*191+3)) proof-of-work
+F9  minimal OS scanner     -- d52879b810e9   just uname -s -m, disconnects
+F10 ELF echo injector      -- eadedac033be   80min, 4 folded binary blocks, clean with --no-fold off
+F11 meow dropper           -- 72a973e0ba30   full kill chain in one exec: drop+exec+useradd+chpasswd+/tmp/mew
+```
+
+---
+
+### 2026-06-01 pull
+
+full_merge_2026-06-01: 131h, 3644 attempts, 217 IPs, 856 sessions, 164,605 commands.
+
+Period 9 (threshold=1, since 2026-05-30 12:01 Rabat):
+337 attempts, 52 IPs, 337 accepted, 163,705 commands.
+163,404 of those are echo chunks -- family 10 still the dominant volume driver.
+
+New credential spotted: lab123 (16 hits in period 9). Wasn't in previous pulls.
+Likely targeting lab/IoT firmware defaults. Worth tracking.
+
+22:00 UTC peak still holds (1279 attempts). 11 credential feedback loops.

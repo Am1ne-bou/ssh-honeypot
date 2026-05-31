@@ -1,13 +1,14 @@
-# Findings -- 121h on a public VPS
+# Findings -- 131h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-05-31 12:52 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-05-31 22:37 UTC.
 
 ```
-3514 auth attempts
- 204 unique source IPs
- 726 sessions accepted
- 11 attack families identified
+3644 auth attempts
+ 217 unique source IPs
+ 856 sessions accepted
+ 164605 commands captured
+  11 attack families identified
 ```
 
 ---
@@ -84,6 +85,10 @@ The machine is claimed.
 
 Named after Romania's anti-corruption agency -- the malware author is trolling.
 
+![Diicot session replay](https://github.com/user-attachments/assets/7fce6ce8-85ea-4983-b20b-8cf5eab0e524)
+
+*Session dc727dd9b39f -- 10 commands, 36s. The last exec line is the full kill chain: wipes crontab, locks authorized_keys with chattr, kills competing miners, then deploys.*
+
 ---
 
 ### 3. SCP dropper
@@ -103,6 +108,10 @@ Random 10-char dir names to avoid collisions.
 The honeypot speaks the SCP wire protocol (sends the ready byte, parses headers, acks),
 so the bot thought all 11 uploads worked. Nothing was actually received.
 
+![SCP dropper session replay](https://github.com/user-attachments/assets/a60ec157-bbe7-479d-85c4-9bc6e4b12c6b)
+
+*Session d22ff677d549 -- 22 commands. Each line is a different directory tried: mkdir then scp -t immediately after. Systematic bruteforce, random 10-char names, all returned exit 0.*
+
 ---
 
 ### 4. Password changer
@@ -121,6 +130,10 @@ falls back to `chpasswd` which reads from stdin -- no terminal needed.
 Passwords seen: `i5n#_o$_6qFK!$s` and `$MWtB6=$e6mK#=E`. Strong, machine-generated.
 The logic: bots are scanning the same ranges simultaneously. Get in first, change the
 password, nobody else can use the machine.
+
+![Password changer session replay](https://github.com/user-attachments/assets/c0dd6abe-c4c2-4f60-aa40-7152b37d4d7a)
+
+*Session 29e4813a04ad -- 4 commands, 2s. `passwd` fails silently, falls back to `chpasswd` with a machine-generated strong password. The whole thing runs and exits before a human could type the first command.*
 
 ---
 
@@ -148,6 +161,10 @@ the entry vector changes what persistence it sets up.
 
 Ran via SSH exec channel (not interactive shell) -- the original scripts missed it entirely.
 
+![C2 dropper session replay](https://github.com/user-attachments/assets/ef6c4883-dbea-45ca-aed6-b68da18d49c2)
+
+*Session a7a62f0046ee -- 1 command, 0s. The hex in the echo decodes to `auth_ok` -- it beacons the C2 that authentication succeeded before pulling and executing the payload.*
+
 ---
 
 ### 6. w.sh / astats -- persistence bot
@@ -172,6 +189,10 @@ the other revives the miner.
 
 Process names: `astats`, `netai`, `kstats`. Look like monitoring tools in `ps aux`.
 
+![w.sh persistence session replay](https://github.com/user-attachments/assets/4e2c3a3c-9924-4baf-8707-1ff991107ec8)
+
+*Session 95bd06bfef71 -- 11 commands, 9s. Cron entry and systemd service written in the same session. The last three lines drop the miner binary three times -- /dev/shm first, then /tmp as fallback.*
+
 ---
 
 ### 7. VPS infrastructure scout
@@ -186,6 +207,10 @@ deciding if the machine is worth deploying a miner on.
 
 Ended without deploying anything. Machine failed some criterion or it's a pure probe
 that reports back to a queue.
+
+![VPS infrastructure scout session replay](https://github.com/user-attachments/assets/37168a2a-fcda-4b73-a9ec-94aef7c55030)
+
+*Session e1877e76a176 -- 35 commands, no payload. Checks package managers, disk speed, network, shadow file. Ends without deploying anything -- the machine passed or failed some internal scoring and the result went back to a queue.*
 
 ---
 
@@ -212,6 +237,10 @@ what to send next, externally.
 We had to fix the fake shell to pass this check: add arithmetic expansion `$((expr))`,
 awk NR==N condition, df -P flag, uname -srm case.
 
+![SSHCHK session replay](https://github.com/user-attachments/assets/e96a9455-3cbe-47c6-9870-8913fb62f7f7)
+
+*Session f63b5f809061 -- 1 command, 0s. The token `5718926f9304` is unique to this session. The C2 strips everything between BEGIN and END and parses the output -- OS, kernel, proof-of-work result, and disk device -- without ever asking for them separately.*
+
 ---
 
 ### 9. Minimal OS scanner
@@ -224,6 +253,10 @@ uname -s -m
 
 Just that. Gets "Linux x86_64", disconnects. Either cataloguing the internet or
 a first-stage probe before a payload bot follows up.
+
+![Minimal OS scanner session replay](https://github.com/user-attachments/assets/93dc0bd0-4f69-4395-819e-9e56007539ab)
+
+*Session d52879b810e9 -- 1 command, 3s. Gets the answer it needs and disconnects immediately. Lightest possible post-auth probe in the dataset.*
 
 ---
 
@@ -264,8 +297,13 @@ Binary analysis pending -- all four recoverable from session.log hex chunks, als
 downloadable from the C2 servers (still live as of 2026-05-30). Haven't done the
 Ghidra work yet.
 
-Hit a second time on 2026-05-31. Same kill chain, same C2 IPs, but path changed
+Hit a second time on 2026-05-31 (session eadedac033be). Started 08:37 Rabat, ended
+10:58 Rabat -- 1h21min, 43,314 log lines. Same kill chain, same C2 IPs, path changed
 from `/b/amd64` to `/s/amd64`. Same four binaries in the same order. C2 still live.
+
+![ELF echo injector session replay](https://github.com/user-attachments/assets/e0e2ebce-5f56-48a9-bc47-deba8402e58c)
+
+*Session eadedac033be -- 43,314 commands, 1h21min. Each block is one binary written as hex chunks via echo. wget/curl tried first, failed, then the bot rebuilt the entire payload from shell commands alone.*
 
 ---
 
@@ -296,6 +334,10 @@ Entire kill chain in a single command, run via SSH exec channel (not interactive
 No recon, no persistence check -- just drop, execute, and leave.
 
 Binary analysis not done yet. What `meow` actually does is unknown.
+
+![Meow dropper session replay](https://github.com/user-attachments/assets/4507138a-7d2e-4421-b960-ff7adf8893dc)
+
+*Session 72a973e0ba30 -- 1 command, 7s. The entire kill chain in a single exec: download, execute, create two backdoor users, change password, write credential to /tmp/mew. Done before you could read the first line.*
 
 ---
 

@@ -8,11 +8,11 @@ accepts attackers into a fake Linux shell, and records everything they do.
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (121+ hours, Helsinki VPS)
+## findings (131+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-3514 auth attempts from 204 source IPs. 11 attack families identified.
+3644 auth attempts from 217 source IPs. 856 sessions accepted. 11 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
 Top passwords: `123456`, `admin`, `postgres`, `password`, `1234`.
