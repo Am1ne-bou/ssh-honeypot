@@ -1,13 +1,13 @@
-# Findings -- 131h on a public VPS
+# Findings -- 163h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-05-31 22:37 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-02 13:08 UTC.
 
 ```
-3644 auth attempts
- 217 unique source IPs
- 856 sessions accepted
- 164605 commands captured
+4005 auth attempts
+ 233+ unique source IPs
+1217 sessions accepted
+ 283553 commands captured
   11 attack families identified
 ```
 
@@ -18,15 +18,17 @@ Data: 2026-05-26 11:37 UTC to 2026-05-31 22:37 UTC.
 Not continuous. Two big waves, one quiet day.
 
 ```
-2026-05-26    88 commands  -- first bots, mixed families
-2026-05-27   545 commands  -- Diicot heavy day
-2026-05-28    10 commands  -- quiet
-2026-05-29   195 commands  -- threshold=1 deployed, new families appear
-2026-05-30  60453 commands  -- family 10 first session, 78min, 4 binaries
-2026-05-31  64772 commands  -- family 10 again, family 11 first appearance
+2026-05-26     88 commands  -- first bots, mixed families
+2026-05-27    545 commands  -- Diicot heavy day
+2026-05-28     10 commands  -- quiet
+2026-05-29    174 commands  -- threshold=1 deployed, new families appear
+2026-05-30  60206 commands  -- family 10 first session, 78min, 4 binaries
+2026-05-31 102653 commands  -- family 10 again, family 11 first appearance
+2026-06-01 100196 commands  -- family 10 hits 4x, family 6 surge (7 hits in 2h)
+2026-06-02  18273 commands  -- family 10 active, F12/F13 first appearance (partial day)
 ```
 
-Peak: 22:00 UTC, 1270 attempts in one hour (2026-05-27).
+Peak: 22:00 UTC, 1279 attempts in one hour (2026-05-27).
 
 Almost everything is `SSH-2.0-Go` -- the scanning ecosystem runs on Go's ssh library.
 No OpenSSH overhead, thousands of connections per second from a laptop.

