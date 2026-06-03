@@ -8,14 +8,14 @@ accepts attackers into a fake Linux shell, and records everything they do.
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (163+ hours, Helsinki VPS)
+## findings (190+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-4005 auth attempts from 233+ source IPs. 1217 sessions accepted. 11 attack families identified.
+4142 auth attempts from 267 source IPs. 1354 sessions accepted. 13 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Top passwords: `123456`, `admin`, `postgres`, `password`, `1234`.
+Top passwords: `123456`, `admin`, `e3@HJgr=$4in-a-`, `postgres`, `support`.
 
 **1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
 passwords then kept going 1382 more times after getting in. Also saw a Chinese breach
@@ -61,6 +61,17 @@ I still need to properly analyse them - planning to use Ghidra learn it first bu
 creates two backdoor sudo users (`admin1`, `user1`) with password `modzmodz`, writes
 a root credential string to `/tmp/mew`. Entire kill chain in one exec command.
 Binary analysis pending.
+
+**12. Wowo dropper** -- downloads and executes `runningaway.x86` from `wowo.biz.id`,
+passes a campaign tag (`vipies`) as argument, self-deletes, wipes history. Preceded by
+a full 35-command infrastructure recon. Haven't analysed the binary yet.
+
+**13. Raspberry Pi SSH worm (gJw27HGL)** -- first payload actually captured by the
+quarantine. A 4.7KB bash script, not a binary. Kills competing malware, injects an SSH
+backdoor key, changes the `pi` user password, then spawns an IRC bot that connects to
+Undernet and waits for RSA-signed commands. Spreads itself by scanning 100k IPs with
+zmap and trying `pi:raspberry` and `pi:raspberry993311`. I read the source but I still
+need to understand the IRC C2 side properly -- that's next.
 
 ---
 
