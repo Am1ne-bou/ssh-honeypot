@@ -968,3 +968,78 @@ Execute sessions: 517b6d0aebb3 (06:06 UTC), 30e7711a31a2 (10:02 UTC).
 SCP upload sessions: a3184ec762df (09:40 UTC) -- two attempts within 1s.
 Execute at 06:06 predates upload at 09:40 -- the two bots run independently, executor assumes binary already present. Quarantine may have captured gJw27HGL (couldn't verify, no sudo). Check quarantine before next pull.
 TODO: pull quarantine file, analyse gJw27HGL, confirm two-stage coordination or coincidence.
+
+**CONFIRMED 2026-06-03 -- gJw27HGL IS in quarantine.**
+
+Checked quarantine dir mtime: `2026-06-02 09:40:27 UTC` -- exact second sessions 736804a5e6
+and a3184ec762df fired. File was written. Dir is 0700 honeypot-owned so can't read as VPS_USER.
+This is the first real attacker payload captured by quarantine (the previous one was our own dropper_sim.go test). I'm genuily in tears im happy :)
+TODO: sudo pull gJw27HGL from quarantine
+this is really exciting, the first real payload captured by quarantine. I hope it's something interesting and not just a random miner binary. Either way, it's a milestone for the project. Can't wait to see what's inside.
+I need to update the findings now im happy :) 
+
+---
+
+### F13 -- gJw27HGL analysis (2026-06-03)
+
+Not a binary -- a 4.7KB bash script. Quarantine filename: `tuLtUp8R` (the SCP C-header name),
+not `gJw27HGL` (the path the executor was looking for). SHA256 confirmed matches quarantine file.
+
+**It's a Raspberry Pi SSH worm with IRC C2.**
+
+Kill chain:
+1. If not root: copies self to /opt/<random>, writes /etc/rc.local for boot persistence, reboots.
+2. Kills competitors: minerd, ktx-* (multi-arch IoT malware), kaiten, zmap, bins.sh, perl.
+3. Blocks competitor C2: `127.0.0.1 bins.deutschland-zahlung.eu` in /etc/hosts.
+4. Injects RSA pubkey into /root/.ssh/authorized_keys -- permanent backdoor.
+5. Changes `pi` user password to a hardcoded SHA-512 hash.
+6. Spawns an IRC bot: connects to Undernet (ix1/ix2.undernet.org + 4 others), joins #biret.
+   Commands arrive as base64 PRIVMSG with RSA signature -- operator must have the private key.
+   Bot verifies signature before exec. Botnet cannot be hijacked by joining #biret.
+7. Self-propagates: zmap scans 100k IPs on port 22, sshpass tries `raspberry` and
+   `raspberry993311` (Raspberry Pi defaults), SCPs itself to victims and executes.
+
+**F13 "two-bot" mystery solved.**
+Both bots ARE this worm running on two separate infected Pi machines. The SCP phase
+(176.61.50.14, 09:40 UTC) and the execute phase (172.210.53.193, 06:06 UTC) are two
+independent infected nodes -- not a coordinated two-stage dropper. The timing mismatch
+(executor 3.5h before uploader) makes sense: each infected machine runs the worm
+independently on whatever IPs zmap gives it.
+
+This is the classic Mirai-era Raspberry Pi worm pattern -- probably a variant of
+Linux.MulDrop or similar (2017-era). The IRC C2 with RSA-signed commands is the
+sophisticated part for what is otherwise a simple shell script.
+
+---
+
+### 2026-06-03 session
+
+**Stats (190.3h total):** 4142 attempts, 267 IPs, 1354 sessions, 371,940 commands, 13 families.
+vs last pull (150.2h): +282 attempts, +34 IPs, +282 sessions, +106,660 commands.
+
+**Log pull note:** June 2 data was missing from the .gz pull -- logrotate uses delaycompress
+so the rotated file was uncompressed on disk (session.log-2026-06-03, 52MB). Always pull
+uncompressed rotated files too, not just *.gz.
+
+**F12 (wowo dropper) confirmed:** session d9ddf36a96, 2026-06-02 01:53 Rabat.
+runningaway.x86 from wowo.biz.id/wowiloveyou/, arg "vipies" (campaign tag), self-deletes,
+history -c. Same source IP as F13 (172.210.53.193). Binary not analysed yet.
+
+**F13 (gJw27HGL) confirmed + analysed:** quarantine captured the payload (4.7KB bash script,
+not a binary). Filename in quarantine is tuLtUp8R -- that's the SCP C-header filename, not
+the -t path argument. Two-bot mystery solved: both are infected Raspberry Pi nodes running
+the same worm independently. Not coordinated. See F13 analysis section above.
+
+**New credentials trending:** e3@HJgr=$4in-a- jumped to #4 (73 hits, looks like breach data),
+support at 65, lab123 at 46. New feedback loop record: 45.148.10.121 with 69 post-accept
+attempts.
+
+**New client clusters:** AsyncSSH_2.1.0 (338 attempts, Python SSH lib, 27.79.x.x Vietnamese
+IPs), PuTTY_Release_0.83 (304 attempts, 3 IPs doing wordlist sprays).
+
+**TODO:**
+- F12: analyse runningaway.x86 if wowo.biz.id still live
+- F11 (meow): binary analysis still pending
+- F10: 4 binaries still recoverable from logs or C2
+- IRC C2 basics: need to understand #biret, Undernet, how operators interact with the botnet
+- Read up on Linux.MulDrop / Mirai-era Pi worms to confirm family

