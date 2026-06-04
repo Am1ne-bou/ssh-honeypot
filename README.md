@@ -8,14 +8,14 @@ accepts attackers into a fake Linux shell, and records everything they do.
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (190+ hours, Helsinki VPS)
+## findings (213+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-4142 auth attempts from 267 source IPs. 1354 sessions accepted. 13 attack families identified.
+4477 auth attempts from 289 source IPs. 1689 sessions accepted. 13 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Top passwords: `123456`, `admin`, `e3@HJgr=$4in-a-`, `postgres`, `support`.
+Top passwords: `admin`, `123456`, `support`, `postgres`, `e3@HJgr=$4in-a-`.
 
 **1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
 passwords then kept going 1382 more times after getting in. Also saw a Chinese breach

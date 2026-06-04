@@ -1,13 +1,13 @@
-# Findings -- 190h+ on a public VPS
+# Findings -- 213h+ on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-03 09:53 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-04 08:35 UTC.
 
 ```
-4142 auth attempts
- 267 unique source IPs
-1354 sessions accepted
- 371940 commands captured
+4477 auth attempts
+ 289 unique source IPs
+1689 sessions accepted
+ 509286 commands captured
   13 attack families identified
 ```
 
@@ -25,11 +25,12 @@ Not continuous. Two big waves, one quiet day.
 2026-05-30  60206 commands  -- family 10 first session, 78min, 4 binaries
 2026-05-31 102653 commands  -- family 10 again, family 11 first appearance
 2026-06-01 100196 commands  -- family 10 hits 4x, family 6 surge (7 hits in 2h)
-2026-06-02  ~40000 commands -- family 10 again, F12 and F13 confirmed
-2026-06-03   ~925 commands  -- partial day, ongoing
+2026-06-02 ~507000 commands -- F10 dominates, new 1h9min session (0256bdb274ae), F12 and F13 confirmed
+2026-06-03  ~1800 commands  -- quiet, ongoing
+2026-06-04    ~50 commands  -- partial day (data up to 08:35 UTC)
 ```
 
-Peak: 22:00 UTC, 1279 attempts in one hour (2026-05-27).
+Peak: 22:00 UTC, 1321 total attempts across all sessions at that hour (1279 on 2026-05-27 alone).
 
 Almost everything is `SSH-2.0-Go` -- the scanning ecosystem runs on Go's ssh library.
 No OpenSSH overhead, thousands of connections per second from a laptop.
@@ -303,6 +304,11 @@ Ghidra work yet.
 Hit a second time on 2026-05-31 (session eadedac033be). Started 08:37 Rabat, ended
 10:58 Rabat -- 1h21min, 43,314 log lines. Same kill chain, same C2 IPs, path changed
 from `/b/amd64` to `/s/amd64`. Same four binaries in the same order. C2 still live.
+
+Hit again on 2026-06-02 (session 0256bdb274ae, 45.12.1.49). Started 13:35 Rabat, ended
+14:45 Rabat -- 1h9min. Same C2 IPs (195.177.94.72:564, 45.88.91.135:35146), same
+`/s/amd64` path, same fallback to hex echo injection when downloads fail. Period 9
+total: 506,989 echo commands -- F10 has run enough times to dwarf everything else combined.
 
 ![ELF echo injector session replay](https://github.com/user-attachments/assets/e0e2ebce-5f56-48a9-bc47-deba8402e58c)
 
