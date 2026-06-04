@@ -1,15 +1,44 @@
-# Findings -- 213h+ on a public VPS
+# Findings -- 226h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-04 08:35 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-04 21:37 UTC.
 
 ```
-4477 auth attempts
- 289 unique source IPs
-1689 sessions accepted
- 509286 commands captured
+4537 auth attempts
+ 292 unique source IPs
+1749 sessions accepted
+ 617621 commands captured
   13 attack families identified
 ```
+
+---
+
+## Why medium interaction, not low
+
+I started this project aiming for low interaction -- just log auth attempts and see what
+credentials bots try. That was the plan.
+
+Then the first logs came in. I saw a GPU miner checking lspci and nvidia-smi. I added
+fake GPU output, and suddenly the miner ran its full kill chain instead of exiting. I was
+getting real behavior, not just credential lists.
+
+Then I saw the SCP dropper trying 11 directories. I added the SCP wire protocol so the
+bot thought its uploads worked and kept going. I added a quarantine directory so I could
+capture what it actually sent.
+
+By June 2 the quarantine had caught a real payload -- a Raspberry Pi SSH worm. The ELF
+echo injector had dropped four binaries into the session FS. The SSHCHK proof-of-work
+was passing because I'd implemented arithmetic expansion with a real recursive descent
+parser.
+
+At some point the "low interaction" label stopped being accurate. The code has a stateful
+per-session virtual filesystem, ~80 registered command handlers, real pipe chains (stdout
+fed as stdin to the next stage), `$((expr))` arithmetic expansion, and the full SCP wire
+protocol on both the exec and interactive shell paths. That is medium interaction by any
+reasonable definition -- it is closer to Cowrie than to a simple auth logger.
+
+The gaps are real: no `$(cmd)` substitution, no `> file` writes, no live network. But
+those gaps do not push it back to low. Low means no shell. This has a shell.
 
 ---
 
@@ -27,7 +56,7 @@ Not continuous. Two big waves, one quiet day.
 2026-06-01 100196 commands  -- family 10 hits 4x, family 6 surge (7 hits in 2h)
 2026-06-02 ~507000 commands -- F10 dominates, new 1h9min session (0256bdb274ae), F12 and F13 confirmed
 2026-06-03  ~1800 commands  -- quiet, ongoing
-2026-06-04    ~50 commands  -- partial day (data up to 08:35 UTC)
+2026-06-04  ~7100 commands  -- partial day (data up to 21:37 UTC)
 ```
 
 Peak: 22:00 UTC, 1321 total attempts across all sessions at that hour (1279 on 2026-05-27 alone).

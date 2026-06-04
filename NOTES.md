@@ -1043,3 +1043,32 @@ IPs), PuTTY_Release_0.83 (304 attempts, 3 IPs doing wordlist sprays).
 - F10: 4 binaries still recoverable from logs or C2
 - IRC C2 basics: need to understand #biret, Undernet, how operators interact with the botnet
 - Read up on Linux.MulDrop / Mirai-era Pi worms to confirm family
+
+F13 session  736804a5e683  a3184ec762df  4f293d7be93b 2940424ffe81, ip 176.61.50.14
+
+Added the project to LinkedIn with the GitHub repo linked -- profile now reflects the honeypot work publicly.
+
+---
+
+### interaction label: low -> medium (2026-06-04)
+
+Started this project calling it "low interaction". Made sense at the time -- I was just
+logging auth attempts and returning fake output.
+
+Then the GPU miner showed up. I added lspci fake output with a Tesla T4. It triggered
+the full kill chain. I wanted more of that, so I kept adding commands.
+
+Then the SCP dropper. I added the full wire protocol so the bot would think uploads
+worked and keep going. Then the quarantine. Then SSHCHK needed arithmetic expansion so
+I wrote a recursive descent parser for $((expr)). At that point I was past the label.
+
+Looking at the code now: ~80 registered commands, per-session stateful FS, real pipe
+chains, $((expr)) arithmetic, full SCP wire protocol on both exec and shell paths,
+payload quarantine with SHA256 and path traversal protection. That's medium interaction.
+Cowrie is the reference. This is closer to Cowrie than to a simple auth logger.
+
+Changed the label in README, CLAUDE.md, SECURITY.md, FINDINGS.md. Added the story to
+FINDINGS.md under "Why medium interaction, not low".
+
+Fresh numbers after pull (2026-06-04 21:37 UTC, 226h total):
+4537 auth attempts, 292 source IPs, 1749 sessions, 617621 commands, 13 families.

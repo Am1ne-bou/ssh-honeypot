@@ -2,17 +2,25 @@
 
 ![CI](https://github.com/Am1ne-bou/ssh-honeypot/actions/workflows/ci.yml/badge.svg)
 
-Low-interaction SSH honeypot in Go. Listens on port 22, logs every auth attempt,
+Medium-interaction SSH honeypot in Go. Listens on port 22, logs every auth attempt,
 accepts attackers into a fake Linux shell, and records everything they do.
 
 Built to sit on a real public VPS and collect attack data -- what credentials bots
 try, what recon they run, what payloads they attempt to drop.
 
-## findings (213+ hours, Helsinki VPS)
+Started as low-interaction (just auth logging). Then the first logs came in and I
+wanted to capture more -- see what attackers actually do when they think they're on a
+real system. Added lspci, nvidia-smi, and started getting GPU miners to run their full
+kill chain. Saw the SCP dropper, so I added the quarantine. Eventually got the first real
+payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injector.
+Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
+stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
+
+## findings (226+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-4477 auth attempts from 289 source IPs. 1689 sessions accepted. 13 attack families identified.
+4537 auth attempts from 292 source IPs. 1749 sessions accepted. 13 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
 Top passwords: `admin`, `123456`, `support`, `postgres`, `e3@HJgr=$4in-a-`.
@@ -232,9 +240,9 @@ for measuring the effect of config changes (e.g. threshold=10 vs threshold=1).
 
 ## fake shell
 
-Handles ~60 commands: `whoami`, `id`, `uname`, `ls`, `cat`, `ps`, `ifconfig`,
-`nvidia-smi`, `curl`, `wget`, `sudo`, and more. Returns plausible output for
-Ubuntu 24.04 with a Tesla T4 GPU and 8 CPU cores.
+Handles ~80 registered commands: `whoami`, `id`, `uname`, `ls`, `cat`, `ps`,
+`ifconfig`, `nvidia-smi`, `curl`, `wget`, `sudo`, and more. Returns plausible output
+for Ubuntu 24.04 with a Tesla T4 GPU and 8 CPU cores.
 
 Supported shell features:
 

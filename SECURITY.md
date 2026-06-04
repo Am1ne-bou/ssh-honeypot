@@ -52,6 +52,16 @@ unauthorized access, or to deceive legitimate users.
 - The honeypot process itself has no credentials and no access to the host filesystem
   beyond its own working directories
 
+## Interaction level
+
+This is a medium-interaction honeypot. It implements a fake shell environment: ~80
+registered commands, per-session stateful virtual filesystem, working pipe chains,
+`&&` chaining, `$((expr))` arithmetic expansion, and the full SCP wire protocol. It
+cannot be genuinely compromised -- there is no real OS underneath.
+
+It is not low-interaction (which would only log auth attempts with no shell) and not
+high-interaction (which would run a real OS in a VM or container).
+
 ## Scope of the fake shell
 
 The fake shell does not execute attacker commands on the host. All command output is
@@ -62,6 +72,10 @@ Linux environment.
 The session virtual filesystem is in-memory and per-connection. Files "uploaded" via
 SCP exist only in that map and are discarded when the connection closes (unless
 `--quarantine-dir` captures the raw bytes).
+
+Known gaps: no `$(cmd)` subshell substitution, no `> file` writes (only `/dev/null`),
+no `;` chaining. Network commands return canned output -- wget and curl log the URL but
+make no real connections.
 
 ## Reporting a vulnerability
 
