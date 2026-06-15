@@ -1,15 +1,17 @@
-# Findings -- 226h on a public VPS
+# Findings -- 491h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-04 21:37 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-15 22:53 UTC.
 
 ```
-4537 auth attempts
- 292 unique source IPs
-1749 sessions accepted
- 617621 commands captured
-  13 attack families identified
+22104 auth attempts
+  923 unique source IPs
+19316 sessions accepted
+2544806 commands captured
+   14 attack families identified
 ```
+
+*(Previous snapshot: 226h, 4537 attempts, 292 IPs, 1749 sessions, 13 families -- 2026-06-04)*
 
 ---
 
@@ -57,6 +59,11 @@ Not continuous. Two big waves, one quiet day.
 2026-06-02 ~507000 commands -- F10 dominates, new 1h9min session (0256bdb274ae), F12 and F13 confirmed
 2026-06-03  ~1800 commands  -- quiet, ongoing
 2026-06-04  ~7100 commands  -- partial day (data up to 21:37 UTC)
+2026-06-06 to 06-09        -- F13 SSH worm returns 3 more times (same hash, same bot)
+2026-06-10 to 06-11        -- SSHCHK surge, ~940 sessions/day sustained
+2026-06-12  F14 first hit  -- architecture prober (hw.bin), 2 ELF test binaries via SCP
+2026-06-14                 -- F13 worm hits again (5th quarantine capture total)
+2026-06-15  ongoing        -- F10 echo injector at 62 sessions total, 2.44M chunks
 ```
 
 Peak: 22:00 UTC, 1321 total attempts across all sessions at that hour (1279 on 2026-05-27 alone).
@@ -249,6 +256,8 @@ that reports back to a queue.
 
 ### 8. SSHCHK -- C2 liveness check
 
+**15,071 sessions as of June 15** (~940/day sustained since June 10). Started with 2 sessions on May 30.
+
 2026-05-30 02:20 and 02:23. Two sessions, different IPs, 3 min apart.
 
 ```bash
@@ -294,6 +303,9 @@ a first-stage probe before a payload bot follows up.
 ---
 
 ### 10. ELF echo injector
+
+**62 sessions total as of June 15. 2,442,861 echo chunks total. ~4 sessions/day, consistent.**
+session.log is 3.3GB mostly because of this family.
 
 Single session eb342541b5, 2026-05-30 12:18-13:36 Rabat (78 minutes).
 Source IP: 152.89.61.139 (Ukraine). Appeared 17 minutes after deploying the new binary.
@@ -346,6 +358,13 @@ total: 506,989 echo commands -- F10 has run enough times to dwarf everything els
 ---
 
 ### 11. Meow dropper -- backdoor + credential harvesting
+
+**113 sessions as of June 15.** C2 infrastructure expanded: two new IPs added around June 5.
+- 34.11.111.237 -- original (May 31)
+- 35.237.91.38 -- new
+- 34.181.210.37 -- new
+
+All three serve the same `/meow` and `/meowarm64` binaries with the same kill chain.
 
 Two hits 2026-05-31 01:09 and 01:12 UTC, from different IPs, same C2 at 34.11.111.237.
 
@@ -416,6 +435,9 @@ figure out the relationship between F7 recon and F12 deploy.
 
 ### 13. gJw27HGL -- SSH worm (two-bot pattern)
 
+**5 quarantine captures: Jun 2, Jun 6, Jun 8, Jun 9, Jun 14. Same 4.7KB script every time
+(sha256: 6d1fe6ab3cd04ca5d1ab790339ee2b6577553bc042af3b7587ece0c195267c9b). Still active.**
+
 Two sessions June 2 09:40 UTC. What looked like a coordinated two-stage attack: one bot
 uploads a file to `/tmp/gJw27HGL` via SCP, a different IP executes it. The executor
 actually showed up 3.5h earlier at 06:06 -- before the upload. They're not coordinated,
@@ -440,6 +462,61 @@ in quarantine was my own test from dropper_sim.go.
 
 Analysis pending. I need to learn IRC C2 basics and how to trace a bash script's network
 behavior before I can say anything meaningful about this one.
+
+---
+
+### 14. Architecture capability prober
+
+One session 2026-06-12 12:54-13:00 Rabat. Source IP: 185.129.62.63. Client: SSH-2.0-OpenSSH_9.9 --
+the only hit in the dataset using a real modern OpenSSH client, not a scanner library.
+Single auth attempt with password `root`.
+
+Kill chain:
+```bash
+LC_ALL=C top -bn1                          # snapshot running processes
+scp -t /bin/tz7n3j1l8apie4kgjj19caibdc    # upload 64-bit ELF to /bin/ via SCP
+LC_ALL=C /bin/tz7n3j1l8apie4kgjj19caibdc  # execute it
+LC_ALL=C rm -f /bin/tz7n3j1l8apie4kgjj19caibdc  # delete it
+scp -t /bin/tz7n3j1l8apie4kgjj19caibdc    # upload 32-bit ELF (same path)
+LC_ALL=C /bin/tz7n3j1l8apie4kgjj19caibdc  # execute it
+LC_ALL=C rm -f /bin/tz7n3j1l8apie4kgjj19caibdc  # delete it
+```
+
+The quarantine captured both uploaded binaries:
+
+```
+e374a7ad447d2cf791ecae122894a51ba723901ea132e7fa16cd47c44e4a1769  512B  ELF64 x86-64
+f74a8b06db4f8f48f4a19ea5c01bade2a0dfb9290c4ed04a3f1a3eaa298a843d  348B  ELF32 x86
+```
+
+Both are handcrafted assembly "Hello, world!" programs -- the absolute minimum ELF:
+write(1, "Hello, world!\n", 14) then exit(0). Two syscalls, no libc, no imports.
+The 64-bit version uses `syscall` instruction; the 32-bit uses `int 0x80`. The binaries
+are 512B and 348B because ELF overhead dominates -- the .text sections are 39 and 34 bytes.
+
+This is a capability test. The attacker uploads a known-working binary and checks whether
+it executes on the target before deploying the real payload. Testing both x86-64 and x86
+in the same session means the follow-up deployment is architecture-agnostic and the prober
+is figuring out which format to use.
+
+The `/bin/` path is deliberate -- writable on some misconfigured systems, looks less
+suspicious than `/tmp/` in `top` output.
+
+`top -bn1` before the drop reads the process table. Either checking for competition (other
+malware) or timing -- some malware delays execution until load is low.
+
+The random 26-character filename (`tz7n3j1l8apie4kgjj19caibdc`) avoids collisions.
+Same name reused for both drops since the first is deleted before the second upload.
+
+45 minutes before this session, a VPS scout (F7) ran from 85.215.175.242 (SSH-2.0-Go),
+running the full 35-command recon including `dd` disk benchmark. Different IP, different
+client. Could be two bots in the same pipeline, or two independent actors that happened
+to hit the same minute-window. The F12/F7 pairing set precedent for this two-stage
+pattern, so I'm suspicious of it being coordinated. Neither IP came back after June 12.
+
+The real payload was never sent. Either the honeypot's fake `top` output (or a fake
+execution response) failed some check, or the real deployment goes to a separate queue
+and hasn't happened yet.
 
 ---
 

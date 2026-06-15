@@ -16,14 +16,14 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (226+ hours, Helsinki VPS)
+## findings (491+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-4537 auth attempts from 292 source IPs. 1749 sessions accepted. 13 attack families identified.
+22104 auth attempts from 923 source IPs. 19316 sessions accepted. 14 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Top passwords: `admin`, `123456`, `support`, `postgres`, `e3@HJgr=$4in-a-`.
+Top passwords: `admin`, `123456`, `1234`, `support`, `postgres`, `e3@HJgr=$4in-a-`.
 
 **1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
 passwords then kept going 1382 more times after getting in. Also saw a Chinese breach
@@ -50,12 +50,13 @@ benchmark to assess mining suitability before deciding to deploy.
 
 **8. SSHCHK liveness checker** -- structured C2 probe with BEGIN/END token framing
 and an arithmetic proof-of-work (`echo $((7*191+3))` must return 1340). Confirms
-a real shell before sending a payload.
+a real shell before sending a payload. 15,071 sessions as of June 15, ~940/day.
 
 **9. Minimal OS scanner** -- just `uname -s -m`, disconnects. Pure cataloguing.
 
 **10. ELF echo injector** -- 78 minutes, one SSH connection, 43,058 `echo -e -n`
-commands writing four binaries byte by byte when downloads failed:
+commands writing four binaries byte by byte when downloads failed. 62 sessions total,
+2,442,861 echo chunks, ~4 sessions/day. session.log is 3.3GB largely because of this.
 
 ```
 amd64  -- 5MB, 64-bit Go, stripped
@@ -65,9 +66,10 @@ linux  -- 1.3MB, ELF 32-bit x86, UPX packed
 ```
 I still need to properly analyse them - planning to use Ghidra learn it first but when i will have more time.
 
-**11. Meow dropper** -- downloads `meow` (x86) and `meowarm64` (ARM) from a single C2,
+**11. Meow dropper** -- downloads `meow` (x86-64) and `meowarm64` (ARM64) from C2,
 creates two backdoor sudo users (`admin1`, `user1`) with password `modzmodz`, writes
-a root credential string to `/tmp/mew`. Entire kill chain in one exec command.
+a root credential to `/tmp/mew`. Entire kill chain in one exec command. 113 sessions,
+three C2 IPs now (34.11.111.237, 35.237.91.38, 34.181.210.37).
 Binary analysis pending.
 
 **12. Wowo dropper** -- downloads and executes `runningaway.x86` from `wowo.biz.id`,
@@ -78,8 +80,16 @@ a full 35-command infrastructure recon. Haven't analysed the binary yet.
 quarantine. A 4.7KB bash script, not a binary. Kills competing malware, injects an SSH
 backdoor key, changes the `pi` user password, then spawns an IRC bot that connects to
 Undernet and waits for RSA-signed commands. Spreads itself by scanning 100k IPs with
-zmap and trying `pi:raspberry` and `pi:raspberry993311`. I read the source but I still
-need to understand the IRC C2 side properly -- that's next.
+zmap and trying `pi:raspberry` and `pi:raspberry993311`. Still active: 5 captures total
+(Jun 2, 6, 8, 9, 14), same hash every time. I read the source but I still need to
+understand the IRC C2 side properly -- that's next.
+
+**14. Architecture capability prober** -- SCP-drops two test ELF binaries (x86-64 and x86
+32-bit, both "Hello, world!" assembly, 512B and 348B), executes each, deletes them. Uses
+`top -bn1` first to snapshot running processes. The test binaries are handcrafted minimal
+ELFs -- just enough to confirm execution works before the real payload arrives. Client was
+SSH-2.0-OpenSSH_9.9 (only real OpenSSH in the dataset). One session June 12, source IP
+185.129.62.63. Real payload never came. Quarantine hashes: e374a7ad (512B), f74a8b06 (348B).
 
 ---
 
