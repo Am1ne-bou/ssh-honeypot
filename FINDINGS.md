@@ -1,20 +1,64 @@
-# Findings - 724h on a public VPS
+# Findings - 749h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-25 16:16 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-26 17:14 UTC.
 
 ```
-25026 auth attempts
- 1463 unique source IPs
-13506 unique passwords tried
-22238 sessions accepted
-4047599 commands captured
+25339 auth attempts
+ 1516 unique source IPs
+13629 unique passwords tried
+22551 sessions accepted
+4298306 commands captured
    14 attack families identified
 ```
 
-*(Previous snapshot: 636h, 23993 attempts, 1279 IPs, 21205 sessions, 3518383 commands -- 2026-06-21)*
+*(Previous snapshot: 724h, 25026 attempts, 1463 IPs, 22238 sessions, 4047599 commands -- 2026-06-25)*
 
-## What changed Jun 21 -> Jun 25 (latest pull)
+## What changed Jun 25 -> Jun 26 (latest pull)
+
+One day of data, steady state. No new family.
+
+```
+                        Jun 25        Jun 26        delta
+auth attempts            25026         25339         +313
+unique source IPs         1463          1516          +53
+sessions accepted        22238         22551         +313
+commands captured      4047599       4298306       +250707
+unique passwords         13506         13629         +123
+```
+
+- **ELF echo injector (F10) still the sole command driver.** +250k commands in ~25h.
+  Period 9 echo count: 4,273,296 out of 4,297,018 total commands in that period.
+  Session count now ~102 (45.12.1.49: 66 sessions, 152.89.61.139: 36 sessions).
+
+- **`\ufeff------fuck------` climbed to 155, `---fuck_you----` to 80.** Both entered
+  the top 12. The BOM-prefix artifact persists -- same wordlist, same copy-paste origin.
+
+- **`1234` nearly tied `123456`.** 302 vs 304, both behind `admin` (674). The gap
+  between them closed significantly since Jun 25.
+
+- **AsyncSSH Vietnamese cluster: 956 sessions total** (from 27.79.x.x, 116.99.x.x,
+  116.110.x.x, 171.231.x.x, 171.243.x.x ranges). Still the main source of new IPs.
+
+- **Credential feedback loop: 12 confirmed passwords, 8 still pending loop-back.**
+  One candidate crossed back since Jun 25. Pending: 8 chpasswd-only passwords watching.
+
+Per-family session counts as of Jun 26 (estimate -- fingerprint detector):
+
+```
+SSHCHK             ~15200+  (main IP 103.105.67.170 still frozen at 14793)
+astats / w.sh         910+  (was 900+)
+minimal scanner       245+  (was 240+)
+ELF echo injector     102   (was ~90, two source IPs: 45.12.1.49 + 152.89.61.139)
+password changer      147+  (was 146+)
+meow + C2 dropper     115+  (was 115+)
+Diicot GPU miner       49   (unchanged)
+VPS scout              37   (unchanged)
+```
+
+---
+
+## What changed Jun 21 -> Jun 25
 
 Four more days, mostly steady-state. No new family.
 
@@ -44,7 +88,7 @@ rejected                  2788          2788            +0
   116.99.x.x, 116.110.x.x, 171.231.x.x, 171.243.x.x). Each IP sends 15-50 attempts
   then goes quiet; the cluster rotates through residential ranges.
 
-- **BOM-prefixed credentials growing.** `﻿------fuck------` 125 -> 146,
+- **BOM-prefixed credentials growing.** `\ufeff------fuck------` 125 -> 146,
   `---fuck_you----` 69 -> 76. Unusual encoding -- the BOM prefix suggests the wordlist
   was copy-pasted from a Windows editor at some point and the artifact stuck.
 
@@ -183,6 +227,9 @@ Not continuous. Two big waves, one quiet day.
 2026-06-22 to 06-25       -- steady state: F10 still injecting (~4-6/day), AsyncSSH cluster
                               still expanding (+~60 IPs), no new family, admin overtakes
                               123456 as top credential (657 vs 299)
+2026-06-26                -- steady state continues: F10 at ~102 sessions, +250k commands/day,
+                              \ufeff------fuck------ and ---fuck_you---- both enter top 12,
+                              1234 nearly ties 123456 (302 vs 304)
 ```
 
 Peak: 22:00 UTC, 1321 total attempts across all sessions at that hour (1279 on 2026-05-27 alone).
@@ -375,7 +422,7 @@ that reports back to a queue.
 
 ### 8. SSHCHK -- C2 liveness check
 
-**15,106 sessions as of June 21** (~940/day from June 10-15, then plateaued -- only +35 in the six days to June 21). Started with 2 sessions on May 30.
+**~15,200+ sessions as of Jun 26** (~940/day from June 10-15, then plateaued -- main IP 103.105.67.170 frozen at 14793 since Jun 15, other IPs in the same infrastructure still trickling). Started with 2 sessions on May 30.
 
 2026-05-30 02:20 and 02:23. Two sessions, different IPs, 3 min apart.
 
@@ -423,10 +470,10 @@ a first-stage probe before a payload bot follows up.
 
 ### 10. ELF echo injector
 
-**84 sessions total as of June 21. 3,299,268 echo chunks total. Accelerated to ~4-6 sessions/day in the June 15-21 window -- now the sole driver of the command count.**
-session.log is 3.3GB+ mostly because of this family. Chunk split as of June 21:
-amd64 1,761,647 / kal64 1,055,710 / linux 251,940 / kswpad 229,971 (kswpad frozen
-since June 15 -- the newest sessions ended or branched before re-injecting it).
+**~102 sessions total as of Jun 26. ~4,273,296 echo commands in period 9 alone. Still the sole driver of the command count.**
+Two source IPs: 45.12.1.49 (66 sessions) and 152.89.61.139 (36 sessions).
+session.log is well over 3.3GB mostly because of this family. kswpad was frozen
+since June 15 -- the newest sessions appear to skip or branch before re-injecting it.
 
 Single session eb342541b5, 2026-05-30 12:18-13:36 Rabat (78 minutes).
 Source IP: 152.89.61.139 (Ukraine). Appeared 17 minutes after deploying the new binary.

@@ -16,20 +16,19 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (724+ hours, Helsinki VPS)
+## findings (749+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-25026 auth attempts from 1463 source IPs. 22238 sessions accepted. 14 attack families identified.
+25339 auth attempts from 1516 source IPs. 22551 sessions accepted. 14 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Jun 25): steady state. No new family. The ELF echo injector (F10) remains
-the sole driver of the command count (+529k in 4 days). The Vietnamese `AsyncSSH`
-credential-stuffing cluster keeps adding IPs (+184 since Jun 21). `admin` overtook
-`123456` as top password (657 vs 299). Two new entries in the top 12: `alpine` (92) and
-`lab123` (82). See FINDINGS.md.
+Latest pull (Jun 26): steady state. No new family. The ELF echo injector (F10) still dominates
+the command count (4.27M echo commands out of 4.3M total). Two new hostile passwords cracked
+the top 12: `\ufeff------fuck------` (155, #4 overall, has a Unicode BOM prefix) and
+`---fuck_you----` (80, #12). `1234` nearly tied `123456` (302 vs 304). See FINDINGS.md.
 
-Top passwords: `admin`, `123456`, `1234`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
+Top passwords: `admin`, `123456`, `1234`, `\ufeff------fuck------`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
 
 **1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
 passwords then kept going 1382 more times after getting in. Also saw a Chinese breach

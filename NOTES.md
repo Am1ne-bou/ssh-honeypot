@@ -1257,7 +1257,7 @@ spray campaign hitting the IP with admin-first ordering.
 ranges (27.79.x VNPT, 116.99.x, 116.110.x, 171.231.x, 171.243.x). Each IP sends
 15-50 attempts then rotates off. Now the clear main source of new unique IPs.
 
-**BOM-prefixed junk growing.** `﻿------fuck------` 125 -> 146, `---fuck_you----`
+**BOM-prefixed junk growing.** `\ufeff------fuck------` 125 -> 146, `---fuck_you----`
 69 -> 76. Still just a quirky credential artifact -- copy-pasted from Windows Notepad
 at some point and the BOM stuck. Worth noting because it appears in the top 5.
 
@@ -1285,3 +1285,27 @@ activity is modest but consistent.
 **Hourly peak still 00:00-03:00 UTC** (5050, 4020, 2594, 2675 attempts).
 Secondary spike at 22:00 (1495) and 23:00 (1098). Daytime is genuinely quiet.
 The internet's scanning infrastructure runs on UTC midnight.
+
+### Jun 26 -- 749h
+
+pulled the logs around 19:14 Rabat. nothing dramatic, just one more day of the same.
+
+F10 is at ~102 sessions now, +250k commands since yesterday. it's basically the whole
+project at this point -- strip F10 out and the rest is almost boring. two IPs, same
+C2s that never respond, same hex injection fallback every time. kind of impressive in
+a tedious way.
+
+the BOM password thing is funny. `\ufeff------fuck------` is #4 overall now with 155
+hits. some attacker built a wordlist, pasted it in Notepad on Windows, saved it wrong,
+and now the invisible BOM character is a permanent part of their spray. and it keeps
+working (we accept everything) so they never noticed. `---fuck_you----` is #12 at 80.
+whoever made this wordlist was having a bad day.
+
+`1234` almost caught `123456`. 302 vs 304. at this rate they'll cross in a day or two.
+`admin` is still way ahead at 674.
+
+feedback loop still at 12 confirmed. one more candidate came back since last check.
+8 still pending. slow but consistent -- chpasswd passwords showing up weeks later as
+login attempts from unrelated IPs.
+
+nothing to do. just watching things accumulate.
