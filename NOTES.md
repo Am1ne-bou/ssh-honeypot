@@ -1163,3 +1163,125 @@ meow dropper (F11) has 2 new C2 IPs now: 35.237.91.38 and 34.181.210.37 alongsid
 new family F14 -- jun 12 12:54 rabat, session eab1131b36ad, ip 185.129.62.63, client SSH-2.0-OpenSSH_9.9 (only real openssh in the whole dataset). dropped 2 test ELF binaries via SCP then deleted them. pulled them from quarantine and strung them: both are literally "hello world" in raw assembly. 512B x86-64 and 348B x86. two syscalls each, write() then exit(). handcrafted, no libc. the point is to test if execution works before sending the real payload. real payload never came. 45min earlier there was a F7 VPS scout from a different IP (85.215.175.242) -- might be coordinated, might not.
 
 credential feedback loop confirmed deeper: 9 passwords now appear in both login attempts AND chpasswd targets. N41+mk##3RKWkK- at 11 login hits is the clearest one -- that password has no business being in a wordlist unless it was harvested from a real victim.
+
+---
+
+### 2026-06-22 pull -- 636.4h total
+
+Window 2026-05-26 11:32 UTC -> 2026-06-21 23:59 UTC. Merged dir 2026-06-22.merged.
+
+```
+                Jun 15      Jun 21      delta
+auth attempts    22104       23993      +1889
+source IPs         923        1279       +356
+sessions         19316       21205      +1889
+commands       2544806     3518383    +973577
+passwords        12298       13099       +801
+rejected          2788        2788         +0
+```
+
+The story this pull is what STOPPED, not what's new.
+
+**SSHCHK plateaued.** 15071 -> 15106 sessions (+35 in six days). The ~940/day
+flood that built the last headline just stopped around Jun 15. 103.105.67.170
+(the IP that was 67% of all traffic) is frozen at 14793 attempts -- not a single
+new one. Either we got rotated off their scan list or that node died. Strip those
+two out and the underlying traffic was always modest; now it's visibly modest.
+
+**ELF echo injector (F10) picked up the slack.** 62 -> 84 sessions (+22), and it
+is basically the entire +973k command delta -- all hex echo chunks. Targets:
+amd64 1,761,647 / kal64 1,055,710 / linux 251,940 / kswpad 229,971. kswpad is
+FROZEN at 229,971 (same as Jun 15) while the other three grew. So the new
+sessions are ending or branching before they reach the kswpad stage -- worth a
+replay to see where they stop. Same two C2 IPs, same fallback-to-echo every time.
+
+**AsyncSSH Vietnamese cluster is now the main source of new IPs.** Banner
+AsyncSSH_2.1.0 728 -> 896, spread over ~40 residential IPs (27.79.x VNPT,
+171.231.x, 116.99.x, 116.110.x). Python credential stuffing, all ACCEPTED
+(threshold=1), each trying ~25-50 pw. This is what pushed unique IPs 923 -> 1279.
+
+**Scanner tooling diversified.** PuTTY_0.84 558 -> 1213, OpenSSH_7.4 346 -> 854.
+First sightings: paramiko_5.0.0 (1), ssh2js1.17.0 (Node ssh2 lib, 1),
+AsyncSSH_2.23.0 (1), OpenSSH_10.3p1 Debian-2 (1), libssh_0.11.3 (70) /
+libssh_0.10.5 (41) / libssh_0.7.4 (13). The ecosystem keeps branching past Go.
+
+**Feedback loop still running.** New post-accept loop IPs: 41.250.181.190 (18),
+196.69.82.45 (9), 105.158.231.168 (9). Diicot spray postgres / e3@HJgr=$4in-a-
+still 57 IPs / 59 min. BOM-prefixed junk creds climbed: ------fuck------ 125
+(#4 overall), ---fuck_you---- 69. New IoT defaults: nutanix/4u 39, ubnt 37.
+
+**No new family (still 14).** report.py flagged 17 SCP-upload sessions this
+window (F13 worm / F14 region) but I haven't re-pulled quarantine, so nothing
+new confirmed there. TODO next pull: sudo pull quarantine, diff hashes, check if
+F14 ever sent a real payload.
+
+**UI:** wired analyze.sh to emit stats.json so the console PULL & ANALYSE button
+actually updates the KPIs/IPs/passwords/banners/family counts now instead of
+always showing the baked snapshot. stats.py gained a --json flag.
+
+---
+
+### 2026-06-26 pull -- 724.6h total
+
+Window 2026-05-26 11:37 UTC -> 2026-06-25 16:16 UTC. Merged dir 2026-06-25.merged.
+
+```
+                Jun 21      Jun 25      delta
+auth attempts    23993       25026      +1033
+source IPs        1279        1463       +184
+sessions         21205       22238      +1033
+commands       3518383     4047599     +529216
+passwords        13099       13506       +407
+rejected          2788        2788         +0
+```
+
+Quiet 4-day window. No new family. Steady-state on every metric.
+
+**ELF echo injector (F10) is still the only thing moving the command count.** +529k
+in 4 days, all echo chunks. Same two C2s (195.177.94.72:564, 45.88.91.135:35146),
+both still unreachable, every session falls back to hex injection. ~4-6 sessions/day
+from 152.89.61.139 (Ukraine) and 45.12.1.49. The four binary targets (amd64, kal64,
+kswpad, linux) are all still growing.
+
+**`admin` overtook `123456` as top password.** 657 vs 299. Was always close; now
+clearly separated. Possible shift in the dominant wordlist rotation or a new high-volume
+spray campaign hitting the IP with admin-first ordering.
+
+**Two new passwords in the top 12:**
+- `alpine` (92) -- Alpine Linux default / container image default. Wasn't in the top
+  list before. Suggests targeting of containerized or lightweight-Linux environments.
+- `lab123` (82) -- keeps climbing (was 16 on Jun 1, 46 on Jun 3, 82 now). Likely
+  academic/educational network targeting.
+
+**AsyncSSH Vietnamese cluster still expanding.** Another ~60 new IPs across the same
+ranges (27.79.x VNPT, 116.99.x, 116.110.x, 171.231.x, 171.243.x). Each IP sends
+15-50 attempts then rotates off. Now the clear main source of new unique IPs.
+
+**BOM-prefixed junk growing.** `﻿------fuck------` 125 -> 146, `---fuck_you----`
+69 -> 76. Still just a quirky credential artifact -- copy-pasted from Windows Notepad
+at some point and the BOM stuck. Worth noting because it appears in the top 5.
+
+**103.105.67.170 still frozen at 14793.** Six days later, still no new traffic from
+that IP. Whatever SSHCHK node this was is definitively gone from our scan list.
+
+**Credential feedback loop depth now 12 confirmed.** 12 passwords appear in both login
+attempts AND chpasswd targets, confirming that attacked machines' credentials are being
+recycled back into wordlists. 9 more candidate passwords are in chpasswd but haven't
+looped back yet.
+
+**Period 9 kill-chain breakdown (threshold=1, all data since May 30):**
+```
+OTHER    4,028,304  (echo chunks from F10)
+RECON       10,154
+STAGE        4,989
+EXEC         2,531
+PERSIST        211
+CLEANUP         96
+UPLOAD          42
+```
+The OTHER bucket is 99.5% F10 echo injection. Strip that and the real attacker
+activity is modest but consistent.
+
+**Hourly peak still 00:00-03:00 UTC** (5050, 4020, 2594, 2675 attempts).
+Secondary spike at 22:00 (1495) and 23:00 (1098). Daytime is genuinely quiet.
+The internet's scanning infrastructure runs on UTC midnight.

@@ -1,17 +1,133 @@
-# Findings -- 491h on a public VPS
+# Findings - 724h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-15 22:53 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-06-25 16:16 UTC.
 
 ```
-22104 auth attempts
-  923 unique source IPs
-19316 sessions accepted
-2544806 commands captured
+25026 auth attempts
+ 1463 unique source IPs
+13506 unique passwords tried
+22238 sessions accepted
+4047599 commands captured
    14 attack families identified
 ```
 
-*(Previous snapshot: 226h, 4537 attempts, 292 IPs, 1749 sessions, 13 families -- 2026-06-04)*
+*(Previous snapshot: 636h, 23993 attempts, 1279 IPs, 21205 sessions, 3518383 commands -- 2026-06-21)*
+
+## What changed Jun 21 -> Jun 25 (latest pull)
+
+Four more days, mostly steady-state. No new family.
+
+```
+                        Jun 21        Jun 25        delta
+auth attempts            23993         25026        +1033
+unique source IPs         1279          1463         +184
+sessions accepted        21205         22238        +1033
+commands captured      3518383       4047599       +529216
+unique passwords         13099         13506         +407
+rejected                  2788          2788            +0
+```
+
+- **ELF echo injector (F10) keeps driving the command count.** +529k commands in 4 days,
+  almost entirely `echo` chunks. Still ~4-6 sessions/day from 152.89.61.139 (Ukraine) and
+  45.12.1.49. C2 IPs 195.177.94.72:564 and 45.88.91.135:35146 remain unreachable so
+  every session falls back to hex injection.
+
+- **`admin` overtook `123456` as top password.** 657 vs 299. Possibly a change in the
+  dominant wordlist rotation hitting the IP; previously they were close.
+
+- **Two new passwords in the top 12:** `alpine` (92) -- Alpine Linux / container default --
+  and `lab123` (82), which suggests educational-environment targeting. Both are new enough
+  that they weren't in the Jun 21 top list.
+
+- **AsyncSSH Vietnamese cluster still expanding.** Another +60 IPs (27.79.x.x VNPT,
+  116.99.x.x, 116.110.x.x, 171.231.x.x, 171.243.x.x). Each IP sends 15-50 attempts
+  then goes quiet; the cluster rotates through residential ranges.
+
+- **BOM-prefixed credentials growing.** `﻿------fuck------` 125 -> 146,
+  `---fuck_you----` 69 -> 76. Unusual encoding -- the BOM prefix suggests the wordlist
+  was copy-pasted from a Windows editor at some point and the artifact stuck.
+
+- **`103.105.67.170` (SSHCHK) still frozen at 14793.** No new traffic from that IP
+  since Jun 15. SSHCHK total session count likely still climbing from other IPs
+  in the same infrastructure.
+
+- **Credential feedback loop now has 12 confirmed passwords** (same chpasswd values seen
+  again as login attempts from different IPs). 9 additional candidate passwords in the
+  chpasswd stream have not yet looped back.
+
+Per-family session counts as of Jun 25 (estimate -- fingerprint detector):
+
+```
+SSHCHK             ~15200+  (main IP frozen, others still scanning)
+astats / w.sh         900+  (was 870)
+minimal scanner       240+  (was 235)
+password changer      146+  (was 144)
+meow + C2 dropper     115+  (was 113)
+ELF echo injector      90+  (was 84)
+Diicot GPU miner        49   (unchanged)
+VPS scout               37   (unchanged)
+```
+
+---
+
+## What changed Jun 15 -> Jun 21
+
+The two things that drove the last snapshot both went quiet, and two slower
+trends took over.
+
+```
+                        Jun 15        Jun 21        delta
+auth attempts            22104         23993         +1889
+unique source IPs          923          1279          +356
+sessions accepted        19316         21205         +1889
+commands captured      2544806       3518383       +973577
+unique passwords         12298         13099          +801
+rejected                  2788          2788            +0
+```
+
+- **SSHCHK plateaued.** 15071 -> 15106 sessions (+35 in six days). The ~940/day
+  flood that defined Jun 10-15 stopped almost dead around Jun 15. The IP behind
+  most of it, `103.105.67.170`, is frozen at 14793 attempts -- zero new traffic.
+  Whatever scanning list we were on got rotated off, or that node went down.
+
+- **ELF echo injector (F10) accelerated.** 62 -> 84 sessions (+22), +856k echo
+  chunks. It is now the sole driver of the command count -- nearly all of the
+  +973k new commands are its hex `echo` chunks. `/tmp/amd64`, `/tmp/kal64` and
+  `/tmp/linux` all grew; `/tmp/kswpad` is frozen at 229,971 (the new sessions
+  ended or branched before re-injecting it).
+
+- **AsyncSSH Vietnamese cluster expanded.** The `SSH-2.0-AsyncSSH_2.1.0` banner
+  went 728 -> 896, spread across ~40 distinct residential IPs (27.79.x.x VNPT,
+  171.231.x.x, 116.99.x.x, 116.110.x.x). This Python credential-stuffing botnet
+  is now the main source of *new* unique IPs.
+
+- **Scanner tooling diversified.** PuTTY_0.84 558 -> 1213, OpenSSH_7.4 346 -> 854,
+  plus first sightings of `paramiko_5.0.0`, `ssh2js1.17.0` (Node.js ssh2 lib),
+  `AsyncSSH_2.23.0`, `OpenSSH_10.3p1`, and the `libssh_0.11.3 / 0.10.5 / 0.7.4`
+  family.
+
+- **Credential feedback loop persists.** New post-accept loop IPs: `41.250.181.190`
+  (18), `196.69.82.45` (9), `105.158.231.168` (9). The Diicot spray
+  (`postgres` / `e3@HJgr=$4in-a-`, 57 IPs in 59 min) is unchanged. The obnoxious
+  BOM-prefixed `------fuck------` (125) and `---fuck_you----` (69) credentials
+  climbed; `nutanix/4u` (39) and `ubnt` (37) appear as new IoT defaults.
+
+- **No new family.** Still 14. 17 sessions flagged SCP uploads this window (F13
+  worm / F14 region); quarantine not re-pulled yet, so no new payload confirmed.
+
+Per-family session counts (fingerprint detector) as of Jun 21:
+
+```
+SSHCHK             15106   (was 15071 on Jun 15)
+astats / w.sh        870   (was   714)
+minimal scanner      235   (was   189)
+password changer     144   (was   135)
+meow + C2 dropper    113   (was   113)
+ELF echo injector     84   (was    62)
+Diicot GPU miner      49   (was    49)
+VPS scout             37   (was    37)
+```
 
 ---
 
@@ -64,6 +180,9 @@ Not continuous. Two big waves, one quiet day.
 2026-06-12  F14 first hit  -- architecture prober (hw.bin), 2 ELF test binaries via SCP
 2026-06-14                 -- F13 worm hits again (5th quarantine capture total)
 2026-06-15  ongoing        -- F10 echo injector at 62 sessions total, 2.44M chunks
+2026-06-22 to 06-25       -- steady state: F10 still injecting (~4-6/day), AsyncSSH cluster
+                              still expanding (+~60 IPs), no new family, admin overtakes
+                              123456 as top credential (657 vs 299)
 ```
 
 Peak: 22:00 UTC, 1321 total attempts across all sessions at that hour (1279 on 2026-05-27 alone).
@@ -256,7 +375,7 @@ that reports back to a queue.
 
 ### 8. SSHCHK -- C2 liveness check
 
-**15,071 sessions as of June 15** (~940/day sustained since June 10). Started with 2 sessions on May 30.
+**15,106 sessions as of June 21** (~940/day from June 10-15, then plateaued -- only +35 in the six days to June 21). Started with 2 sessions on May 30.
 
 2026-05-30 02:20 and 02:23. Two sessions, different IPs, 3 min apart.
 
@@ -304,8 +423,10 @@ a first-stage probe before a payload bot follows up.
 
 ### 10. ELF echo injector
 
-**62 sessions total as of June 15. 2,442,861 echo chunks total. ~4 sessions/day, consistent.**
-session.log is 3.3GB mostly because of this family.
+**84 sessions total as of June 21. 3,299,268 echo chunks total. Accelerated to ~4-6 sessions/day in the June 15-21 window -- now the sole driver of the command count.**
+session.log is 3.3GB+ mostly because of this family. Chunk split as of June 21:
+amd64 1,761,647 / kal64 1,055,710 / linux 251,940 / kswpad 229,971 (kswpad frozen
+since June 15 -- the newest sessions ended or branched before re-injecting it).
 
 Single session eb342541b5, 2026-05-30 12:18-13:36 Rabat (78 minutes).
 Source IP: 152.89.61.139 (Ukraine). Appeared 17 minutes after deploying the new binary.
@@ -359,7 +480,7 @@ total: 506,989 echo commands -- F10 has run enough times to dwarf everything els
 
 ### 11. Meow dropper -- backdoor + credential harvesting
 
-**113 sessions as of June 15.** C2 infrastructure expanded: two new IPs added around June 5.
+**113 sessions as of June 21 (unchanged since June 15).** C2 infrastructure expanded: two new IPs added around June 5.
 - 34.11.111.237 -- original (May 31)
 - 35.237.91.38 -- new
 - 34.181.210.37 -- new

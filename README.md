@@ -16,14 +16,20 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (491+ hours, Helsinki VPS)
+## findings (724+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-22104 auth attempts from 923 source IPs. 19316 sessions accepted. 14 attack families identified.
+25026 auth attempts from 1463 source IPs. 22238 sessions accepted. 14 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Top passwords: `admin`, `123456`, `1234`, `support`, `postgres`, `e3@HJgr=$4in-a-`.
+Latest pull (Jun 25): steady state. No new family. The ELF echo injector (F10) remains
+the sole driver of the command count (+529k in 4 days). The Vietnamese `AsyncSSH`
+credential-stuffing cluster keeps adding IPs (+184 since Jun 21). `admin` overtook
+`123456` as top password (657 vs 299). Two new entries in the top 12: `alpine` (92) and
+`lab123` (82). See FINDINGS.md.
+
+Top passwords: `admin`, `123456`, `1234`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
 
 **1. Credential stuffing** -- wordlist spray, RockYou-based. One IP tried 1545 unique
 passwords then kept going 1382 more times after getting in. Also saw a Chinese breach
@@ -50,13 +56,15 @@ benchmark to assess mining suitability before deciding to deploy.
 
 **8. SSHCHK liveness checker** -- structured C2 probe with BEGIN/END token framing
 and an arithmetic proof-of-work (`echo $((7*191+3))` must return 1340). Confirms
-a real shell before sending a payload. 15,071 sessions as of June 15, ~940/day.
+a real shell before sending a payload. 15,106 sessions as of June 21 (~940/day
+June 10-15, then plateaued -- only +35 in the six days after).
 
 **9. Minimal OS scanner** -- just `uname -s -m`, disconnects. Pure cataloguing.
 
 **10. ELF echo injector** -- 78 minutes, one SSH connection, 43,058 `echo -e -n`
-commands writing four binaries byte by byte when downloads failed. 62 sessions total,
-2,442,861 echo chunks, ~4 sessions/day. session.log is 3.3GB largely because of this.
+commands writing four binaries byte by byte when downloads failed. 84 sessions total,
+3,299,268 echo chunks, accelerating (~4-6 sessions/day in the June 15-21 window).
+session.log is 3.3GB+ largely because of this.
 
 ```
 amd64  -- 5MB, 64-bit Go, stripped
