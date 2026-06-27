@@ -20,7 +20,7 @@ stateful virtual FS, working pipes, and arithmetic expansion are all solidly med
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-25339 auth attempts from 1516 source IPs. 22551 sessions accepted. 14 attack families identified.
+25339 auth attempts from 1516 source IPs. 22551 sessions accepted. 15 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
 Latest pull (Jun 26): steady state. No new family. The ELF echo injector (F10) still dominates
@@ -97,6 +97,13 @@ understand the IRC C2 side properly -- that's next.
 ELFs -- just enough to confirm execution works before the real payload arrives. Client was
 SSH-2.0-OpenSSH_9.9 (only real OpenSSH in the dataset). One session June 12, source IP
 185.129.62.63. Real payload never came. Quarantine hashes: e374a7ad (512B), f74a8b06 (348B).
+
+**15. SSH liveness/capability probe** -- `echo -e "\x6F\x6B"` (decodes to "ok"), standalone
+single command, no recon, no follow-up observed. 14954 sessions (66.3% of all sessions),
+3 source IPs, 98.9% from one IP (103.105.67.170). Zero cross-cluster overlap -- never
+combined with any other named family. Likely confirming exec-channel works before making
+a decision externally. Plan: improve bait response and add follow-up detection to see if
+that IP ever returns after the beacon.
 
 ---
 

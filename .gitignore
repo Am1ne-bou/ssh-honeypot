@@ -11,3 +11,4 @@ stats.json
 stats.json.tmp
 ssh-honeypot-linux
 pull_and_analyse.sh
+secrets.sh

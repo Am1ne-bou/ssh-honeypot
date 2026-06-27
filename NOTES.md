@@ -1309,3 +1309,83 @@ feedback loop still at 12 confirmed. one more candidate came back since last che
 login attempts from unrelated IPs.
 
 nothing to do. just watching things accumulate.
+
+---
+
+### session clustering -- fingerprint.py + cluster.py (2026-06-27)
+
+built fingerprint.py + cluster.py to derive classification rules from data instead of
+eyeballing sessions. 22551 sessions -> 404 unique patterns -> 17 clusters, deterministic
+string-match rules
+
+key fixes along the way: echo-injection folding (collapses F10's 43k chunks per binary),
+hex-byte check on echo (was misreading SSHCHK's "ok" beacon as injection), tightened
+passwd/lspci rules to cut false positives, C10 apt-vs-which-apt fix recovered 255 sessions
+from TAIL, C12/C13 folded into C06.
+
+contamination audit: 5 own test sessions found and excluded (dropper_sim.go + manual
+testing), one of them (C09, gpu-recon) only caught by IP correlation, not file signature.
+lesson: file-sig sweep alone isn't enough.
+
+C08 split confirmed by hash: F13 (Pi worm, 6 IPs same hash), F3, F14, rest is own test
+traffic.
+
+F2 (diicot/chattr): got the conclusion wrong on first pass (said "execution not
+confirmed"), corrected against the raw session for dc727dd9b39f -- execution IS real
+(chmod+exec of kvjeboYe, backgrounded, history wiped). what's still open: the binary's
+identity/delivery path. working theory (uncoordinated companion-drop bot, same pattern
+as F13) partially checked -- threshold was 10 at the time per code history, can't get a
+direct log readout since the field didn't exist yet. auth.log window check started,
+not finished.
+
+C01 (ok-beacon, 66.3% of dataset) still has no family. confirmed it's ~14793 separate
+near-instant sessions from one IP, not one giant session (duration check + screenshot of
+back-to-back SESSION headers). campaign-span check (first/last timestamp) not run yet --
+last attempt failed silently because replay's ANSI color codes broke the grep anchor,
+need --no-color or strip escapes first.
+
+idea logged, not yet done: stronger bait on the ok-response, see if the beacon is a gate
+for a stage-2 command we're currently failing.
+
+---
+
+### break -- pc crash (2026-06-27, evening)
+
+pc froze, alt-f4'd everything, lost all open terminals. checked git status after restart:
+nothing actually lost. all the work above is sitting untracked on disk (cluster.py,
+fingerprint.py, clusters_report.md, unique_patterns.json, handover.md, both tmp-sessions
+files, extract_binary.py, extract_all_binaries.py, audit.md, plan.md, serve.py,
+honeypot-console.html). NOT committed yet -- do that before any more risk.
+
+stopping here for a break. open when picking back up:
+- commit current untracked work first
+- fix C01 campaign-span check (--no-color)
+- finish or drop the F2 auth.log companion-bot check
+- C01 still has no family -- the actual blocker on phase B
+- decide on bait change for ok-beacon, separate from phase B timeline
+
+---
+
+### F15 -- SSH liveness/capability probe (2026-06-27)
+
+assigned F15. the ok-beacon cluster is its own family now.
+
+`echo -e "\x6F\x6B"` decodes to "ok", standalone, no framing, no recon, no follow-up
+observed. 14954 sessions, 3 source IPs, 98.9% from a single IP (103.105.67.170). zero
+cross-cluster overlap -- that IP never shows up in any other named family. confirmed by
+full dataset run across all 22551 sessions.
+
+my read: a mass scanner testing whether the exec-channel actually executes and echoes
+back. if the C2 sees "ok" in the response, the target is live. if it sees garbage or
+nothing, the shell is fake or broken. nothing more happens after -- decision is made
+externally. could be a pre-stage gate for something we've never seen because the IP
+rotated off before sending a follow-up. or it's just cataloguing.
+
+**TODO (deferred, not urgent): F15 bait improvement.**
+two things to check separately from phase B:
+1. audit whether our `echo -e "\x6F\x6B"` returns exactly the right bytes back -- if the
+   response is wrong the C2 might already be rejecting us.
+2. add follow-up detection: does 103.105.67.170 ever come back after the beacon and do
+   anything else. would need a session timeline check across the full log history.
+separate task, touches the live Go server, not the python classification pipeline.
+not blocking phase B.

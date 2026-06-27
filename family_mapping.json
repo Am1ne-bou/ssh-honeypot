@@ -1,0 +1,192 @@
+[
+  {
+    "cluster_id": "C00",
+    "family_id": "F1",
+    "session_count": 5524,
+    "ip_count": 1030,
+    "sub_splits": null,
+    "notes": "credential stuffing -- RockYou wordlist, feedback loop. Session count after excluding 1 contaminated SID.",
+    "exclude_sids": ["737e03e52dba"]
+  },
+  {
+    "cluster_id": "C01",
+    "family_id": "F15",
+    "family_name": "SSH liveness/capability probe",
+    "description": "echo -e \"\\x6F\\x6B\" (decodes to ok), standalone single command, no framing, no recon, no follow-up observed. 14954 sessions, 3 IPs, 98.9% from one IP (103.105.67.170). Zero cross-cluster IP overlap -- confirmed standalone, not a shared pre-stage of another family.",
+    "session_count": 14954,
+    "ip_count": 3,
+    "sub_splits": null,
+    "notes": "stdout-hex-beacon -- echo -e \"\\x6F\\x6B\" (ASCII 'ok') sent to stdout, no file write, no download, no sh pipe. See c01_decision_brief.md.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C02",
+    "family_id": "F8",
+    "session_count": 2,
+    "ip_count": 1,
+    "sub_splits": null,
+    "notes": "SSHCHK proof-of-work probe -- SSHCHK_<TOKEN>_BEGIN/END framing, arithmetic verification ($((7*191+3))=1340). CORRECTED from 15k+ to 2 sessions; the 15k+ were C01 misidentification.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C03",
+    "family_id": "F10",
+    "session_count": 103,
+    "ip_count": 3,
+    "sub_splits": null,
+    "notes": "ELF echo injector -- 78min session, 43k echo chunks, 4 binary variants (amd64/kal64/kswpad/linux). Echo hex chunks written to file path via >>, not stdout.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C04",
+    "family_id": "F6",
+    "session_count": 948,
+    "ip_count": 249,
+    "sub_splits": null,
+    "notes": "w.sh/astats persistence -- writable-dir iteration (for d in /dev/shm /tmp /var/run...), cron + systemd dual persistence via watcher-netai.service.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C05",
+    "family_id": "F4",
+    "session_count": 234,
+    "ip_count": 32,
+    "sub_splits": null,
+    "notes": "password changer -- reads /etc/passwd then calls passwd or chpasswd for exclusivity.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C06",
+    "family_id": "F9",
+    "session_count": 169,
+    "ip_count": 114,
+    "sub_splits": [
+      {"fingerprint_id": "4d5f74fdee8d", "command": "uname -s -m", "sessions": 122, "ips": 101},
+      {"fingerprint_id": "fea8e8d8dc36", "command": "hostname", "sessions": 32, "ips": 10},
+      {"fingerprint_id": "933ddd2ecc1d", "command": "uname -a", "sessions": 15, "ips": 3}
+    ],
+    "notes": "OS/arch fingerprint scanner -- bare single-command probe. Merged from C12 (hostname-only) and C13 (uname -a-only) into C06 (uname -s -m-only).",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C07",
+    "family_id": "F5",
+    "session_count": 170,
+    "ip_count": 1,
+    "sub_splits": null,
+    "notes": "fileless C2 dropper -- wget/curl output piped directly to sh, auth_ok hex beacon in same command, no file written to disk.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C08",
+    "family_id": null,
+    "session_count": 17,
+    "ip_count": 9,
+    "sub_splits": [
+      {
+        "fingerprint_id": "77626c11cf42",
+        "family_id": "F13",
+        "label": "Pi worm",
+        "sessions": 14,
+        "ips": 6,
+        "ip_list": ["125.227.156.55", "176.61.50.14", "182.8.161.191", "195.123.109.166", "82.222.190.61", "95.106.203.152"],
+        "notes": "same payload sha256=6d1fe6ab... across all 6 IPs, multi-host distribution confirmed"
+      },
+      {
+        "fingerprint_id": "f594e82fcff6",
+        "family_id": "F3",
+        "label": "SCP dir bruteforce",
+        "sessions": 1,
+        "ips": 1,
+        "ip_list": ["47.103.2.53"],
+        "notes": "11-dir probe pattern, no file received"
+      },
+      {
+        "fingerprint_id": "86ebce527dd0",
+        "family_id": "F14",
+        "label": "capability prober",
+        "sessions": 1,
+        "ips": 1,
+        "ip_list": ["185.129.62.63"],
+        "notes": "LC_ALL=C top -bn1 + SCP to /bin/, hardware probing 512/348B"
+      },
+      {
+        "fingerprint_id": "4cae37d560dc",
+        "family_id": "F14",
+        "label": "capability prober",
+        "sessions": 1,
+        "ips": 1,
+        "ip_list": ["185.220.101.110"],
+        "notes": "LC_ALL=C top -bn1 + SCP to /bin/, same pattern as 86ebce527dd0"
+      }
+    ],
+    "notes": "Split by payload hash. 3 own-test sessions excluded (IPs 41.250.181.190 and 105.158.231.168).",
+    "exclude_sids": ["2d1b80adfb0f", "e30b8bd4ff98", "84e0a852afa6"]
+  },
+  {
+    "cluster_id": "C09",
+    "family_id": "F2",
+    "session_count": 48,
+    "ip_count": 2,
+    "sub_splits": null,
+    "notes": "Diicot/Mexals GPU miner -- GPU recon (lspci|egrep VGA) -> competitor-miner kill (pkill/killall xmrig/cnrig/java) -> chattr -iae ~/.ssh/authorized_keys lock -> chmod+execute of randomly-named binary, backgrounded, history wiped. Full chain confirmed in session dc727dd9b39f only. Stage distribution (48 sessions): recon-only=20, recon+kill=0, recon+kill+execute=28. Binary identity and delivery path not confirmed (no fetch line in representative session).",
+    "exclude_sids": ["0c4e580eeda1"]
+  },
+  {
+    "cluster_id": "C10",
+    "family_id": "F7",
+    "session_count": 255,
+    "ip_count": 10,
+    "sub_splits": null,
+    "notes": "VPS infrastructure scout -- 35-cmd multi-distro recon (which apt + which yum/pacman/zypper), 255:255 pattern:session ratio due to /tmp/test_XXXXXX underscore not normalizing. Recovered from TAIL after cluster rule fix.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C11",
+    "family_id": "F11",
+    "session_count": 12,
+    "ip_count": 4,
+    "sub_splits": null,
+    "notes": "Meow backdoor -- rm -rf meow* + wget/curl meow binary, often prefixed with sudo -S using common default passwords (ubnt, ui, 123456...).",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C14",
+    "family_id": null,
+    "session_count": 1,
+    "ip_count": 1,
+    "sub_splits": null,
+    "notes": "DUAL TAG F7+F12. IP 172.210.53.195 ran 35-cmd F7-style recon prefix then wowo binary deploy at end in one session. Same IP as documented June 2 session. Do not force a single family label.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C15",
+    "family_id": "F13",
+    "session_count": 14,
+    "ip_count": 6,
+    "sub_splits": null,
+    "notes": "F13 execute-phase companion to C08 F13 uploads -- chmod +x <random-name> && bash -c ./<random-name> in separate connection after SCP upload. Same 6 IPs as C08 fingerprint 77626c11cf42.",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "C16",
+    "family_id": null,
+    "session_count": 10,
+    "ip_count": 2,
+    "sub_splits": [
+      {"fingerprint_id": "b4a30b0ac1dd", "sessions": 6, "ips": 1, "ip_list": ["188.64.139.147"]},
+      {"fingerprint_id": "e64371e0bd49", "sessions": 4, "ips": 1, "ip_list": ["152.42.202.161"]}
+    ],
+    "notes": "novel-low-volume -- ---SEP--- structured multi-field output probe. 10 sessions, 2 IPs. Tentative; no forced family number assigned. Structurally distinct from C02 (no SSHCHK token, no arithmetic proof-of-work).",
+    "exclude_sids": null
+  },
+  {
+    "cluster_id": "TAIL",
+    "family_id": null,
+    "session_count": 85,
+    "ip_count": 37,
+    "sub_splits": null,
+    "notes": "unclassified -- 31 patterns, no rule matched. Left as-is pending manual review.",
+    "exclude_sids": null
+  }
+]
