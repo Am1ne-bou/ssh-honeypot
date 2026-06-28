@@ -130,10 +130,14 @@ def render_session(sid, evs, fold=True):
             break
 
     # extract commands in order
+    # echo inject entries use kind="echo_inject" with the compact rec dict as payload
     cmds = []
     for ts, msg, rec in evs:
         if msg in ("shell", "exec"):
-            cmds.append((ts, msg, rec.get("command", "").strip()))
+            if rec.get("_echo"):
+                cmds.append((ts, "echo_inject", rec))
+            else:
+                cmds.append((ts, msg, rec.get("command", "").strip()))
         elif msg == "wget fetch":
             cmds.append((ts, "log", "  [wget -> %s]" % rec.get("url", "?")))
         elif msg == "curl fetch":
@@ -173,22 +177,33 @@ def render_session(sid, evs, fold=True):
             i += 1
             continue
 
-        # detect echo injection run
-        if fold and is_echo_inject(cmd):
-            run = [cmd]
-            target = echo_target(cmd)
-            j = i + 1
-            while j < len(cmds):
-                _, k2, c2 = cmds[j]
-                if k2 != "log" and is_echo_inject(c2) and echo_target(c2) == target:
-                    run.append(c2)
-                    j += 1
-                else:
-                    break
-            if len(run) >= 5:
-                print(c(YELLOW, fold_echo_run(run)))
-                i = j
-                continue
+        marker = c(DIM, "[exec] ") if kind == "exec" else ""
+
+        # echo_inject: cmd is the compact rec dict
+        if kind == "echo_inject":
+            rec = cmd
+            if fold:
+                target = rec["_target"]
+                run = [rec]
+                j = i + 1
+                while j < len(cmds):
+                    _, k2, r2 = cmds[j]
+                    if k2 == "echo_inject" and r2["_target"] == target:
+                        run.append(r2)
+                        j += 1
+                    else:
+                        break
+                if len(run) >= 5:
+                    total_bytes = sum(r.get("_nbytes", 0) for r in run)
+                    kb = total_bytes / 1024
+                    print(c(YELLOW, "[... %d echo chunks -> %s (~%.1f KB ELF)]" % (len(run), target, kb)))
+                    i = j
+                    continue
+            # short run or --no-fold: compact per-chunk line
+            print(prompt(cwd) + "[echo chunk -> %s (~%.1f KB)]" % (
+                rec["_target"], rec.get("_nbytes", 0) / 1024))
+            i += 1
+            continue
 
         # track cwd -- only pure "cd <path>" with no compound operators
         if re.match(r'^cd\s+\S+$', cmd):
@@ -199,12 +214,6 @@ def render_session(sid, evs, fold=True):
                 cwd = "/root"
             else:
                 cwd = (cwd.rstrip("/") + "/" + dest)
-
-        # exec vs shell marker
-        if kind == "exec":
-            marker = c(DIM, "[exec] ")
-        else:
-            marker = ""
 
         print(prompt(cwd) + marker + cmd)
         i += 1
@@ -246,15 +255,35 @@ def main():
     session_path = os.path.join(logdir, "session.log")
 
     # group events by sid, keep chronological order
+    # store compact dicts -- echo inject hex strings are ~600 bytes each and
+    # there are millions of them, so we pre-classify and drop the payload
     events = defaultdict(list)
     for rec in load_jsonlines(session_path):
         sid = rec.get("sid", "")[:12]
         ts  = rec.get("time", "")
         msg = rec.get("msg", "")
-        if msg in ("handshake ok", "shell", "exec",
-                   "wget fetch", "curl fetch",
-                   "scp receive", "scp file", "scp payload saved"):
-            events[sid].append((ts, msg, rec))
+        if msg == "handshake ok":
+            data = {"remote": rec.get("remote","?"), "client": rec.get("client","?"), "user": rec.get("user","?")}
+        elif msg in ("shell", "exec"):
+            cmd = rec.get("command", "").strip()
+            if is_echo_inject(cmd) and echo_target(cmd) != "?":
+                nbytes = len(re.findall(r'\\x[0-9a-fA-F]{2}', cmd))
+                data = {"_echo": True, "_target": echo_target(cmd), "_nbytes": nbytes, "command": ""}
+            else:
+                data = {"command": cmd}
+        elif msg == "wget fetch":
+            data = {"url": rec.get("url","?")}
+        elif msg == "curl fetch":
+            data = {"url": rec.get("url","?")}
+        elif msg == "scp receive":
+            data = {}
+        elif msg == "scp file":
+            data = {"name": rec.get("name","?"), "size": rec.get("size","?")}
+        elif msg == "scp payload saved":
+            data = {"sha256": rec.get("sha256","?")}
+        else:
+            continue
+        events[sid].append((ts, msg, data))
 
     if not events:
         print("no sessions found in", logdir, file=sys.stderr)

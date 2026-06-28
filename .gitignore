@@ -12,3 +12,16 @@ stats.json.tmp
 ssh-honeypot-linux
 pull_and_analyse.sh
 secrets.sh
+
+honeypot_stix_*.json
+unique_patterns.json
+families.json
+clusters_report.md
+
+tmp-*
+verify-t*.txt
+replay--*.txt
+*.bak
+
+analysis/__pycache__/
+__pycache__/

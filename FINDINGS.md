@@ -688,6 +688,29 @@ and hasn't happened yet.
 
 ---
 
+### 15. SSH liveness/capability probe
+
+**14954 sessions, 3 IPs, 98.9% from 103.105.67.170. Campaign span on that IP: ~4.5h,
+2026-06-15, single burst.**
+
+```bash
+echo -e "\x6F\x6B"
+```
+
+Decodes to "ok". Single standalone command, no framing, no recon, no follow-up.
+Zero cross-cluster overlap with any other family -- this is the IP's only behavior
+across all 22551 sessions in the dataset.
+
+14793 sessions from one IP in under 5 hours is one connection every ~1-2 seconds.
+Consistent with an automated mass-scan sweep, not a persistent monitor.
+
+My read: testing whether the exec channel executes and echoes back. If the C2 sees
+"ok", the target is live. If it sees garbage or nothing, the shell is fake or broken.
+Decision is made externally -- nothing more follows. Could be a pre-stage gate for a
+follow-up we never saw, or pure cataloguing.
+
+---
+
 ## Effect of auth-threshold=1
 
 Deployed 2026-05-29 06:15 UTC. Accept any password on first attempt.
