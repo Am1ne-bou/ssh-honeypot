@@ -1,20 +1,31 @@
-# Findings - 749h on a public VPS
+# Findings - 1057h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-06-26 17:14 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-07-09 13:31 UTC.
 
 ```
-25339 auth attempts
- 1516 unique source IPs
-13629 unique passwords tried
-22551 sessions accepted
-4298306 commands captured
-   14 attack families identified
+38515 auth attempts
+ 2012 unique source IPs
+18986 unique passwords tried
+35727 sessions accepted
+6640574 commands captured
+   15 attack families identified
 ```
 
-*(Previous snapshot: 724h, 25026 attempts, 1463 IPs, 22238 sessions, 4047599 commands -- 2026-06-25)*
+*(Previous snapshot: 749h, 25339 attempts, 1516 IPs, 22551 sessions, 4298306 commands -- 2026-06-26)*
 
-## What changed Jun 25 -> Jun 26 (latest pull)
+## What changed Jun 26 -> Jul 9 (latest pull)
+
+```
+                    Jun 26      Jul 9       delta
+auth attempts        25339      38515      +13176
+unique source IPs     1516       2012        +496
+sessions accepted    22551      35727      +13176
+commands captured  4298306    6640574    +2342268
+unique passwords     13629      18986       +5357
+```
+
+## What changed Jun 25 -> Jun 26
 
 One day of data, steady state. No new family.
 
@@ -490,12 +501,15 @@ linux  -- 1.3MB, ELF 32-bit x86, UPX packed
 ```
 
 C2 servers tried:
-- 195.177.94.72:564
+- 195.177.94.72:564 and 195.177.94.72:3594 (two ports, same server)
 - 45.88.91.135:35146
 
 Both refused connections (fake wget returns errors). So the bot wrote all four binaries
 as hex via 43,058 `echo -e -n` chunks -- the entire payload delivered inside the SSH
 session itself.
+
+Each server exposes three path prefixes per binary: `/b/`, `/s/`, `/t/`. Meaning of `/t/`
+unknown -- `/b/` and `/s/` are likely "binary" and "script" but `/t/` has no obvious read.
 
 `\x7f\x45\x4c\x46` = ELF magic number. Every Linux binary starts with these 4 bytes.
 
@@ -559,6 +573,13 @@ Entire kill chain in a single command, run via SSH exec channel (not interactive
 No recon, no persistence check -- just drop, execute, and leave.
 
 Binary analysis not done yet. What `meow` actually does is unknown.
+
+A second activity from the same C2 server (197.255.229.88:1987, unrelated to the three
+GCP IPs above) was observed in the Jun 26 replay: SSH key injection via `/kon` appended
+to `~/.ssh/authorized_keys`, then a secondary payload fetched from `/fav.ico`. The fetch
+uses a 6-method fallback chain: curl -> wget -> python3 urllib -> python2 urllib -> perl
+LWP -> raw TCP socket with bash /dev/tcp. More robust than anything else in the dataset.
+Whether this is the same operator or a different one using overlapping infra is unknown.
 
 ![Meow dropper session replay](https://github.com/user-attachments/assets/4507138a-7d2e-4421-b960-ff7adf8893dc)
 
@@ -745,6 +766,24 @@ all 11 attempts instead of dying on the first rejection.
 
 **URL logging (added late).** wget/curl now log their URL argument. Family 10 URLs
 captured within 17 minutes of deploying.
+
+## Confirmed C2 infrastructure (from replay--2026-06-26)
+
+Extracted from session replay, confirmed in raw session.log:
+
+| Family | URL | Notes |
+|--------|-----|-------|
+| F2 Diicot | `http://103.160.59.94:28816/CZRmrtxnrNONBXhwfFeqjNfBrliNaShG` | payload saved to `~/.sysmonitor`, chmod+exec |
+| F5 dropper | `https://14.46.136.77/sh` | wget/curl piped to sh, fileless |
+| F6 w.sh | `http://91.239.211.89/init.sh` | tried /tmp, /var/tmp, /dev/shm |
+| F11 Meow | `http://197.255.229.88:1987/fav.ico` | payload, curl/wget/python/perl/tcp fallback chain |
+| F11 Meow | `http://197.255.229.88:1987/kon` | SSH public key, appended to authorized_keys |
+| F12 wowo | `http://wowo.biz.id/wowiloveyou/runningaway.x86` | chmod 777, executed as `./runningaway.x86 vipies`, self-deleted |
+
+F10 C2 uses two ports on 195.177.94.72: 564 (documented) and 3594 (also observed).
+Both servers (195.177.94.72 and 45.88.91.135) serve /b/, /s/, and /t/ paths for each binary.
+
+---
 
 ## What I missed
 

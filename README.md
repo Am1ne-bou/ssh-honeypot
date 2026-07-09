@@ -16,17 +16,18 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (749+ hours, Helsinki VPS)
+## findings (1057+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-25339 auth attempts from 1516 source IPs. 22551 sessions accepted. 15 attack families identified.
+38515 auth attempts from 2012 source IPs. 35727 sessions accepted. 15 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Jun 26): steady state. No new family. The ELF echo injector (F10) still dominates
-the command count (4.27M echo commands out of 4.3M total). Two new hostile passwords cracked
-the top 12: `\ufeff------fuck------` (155, #4 overall, has a Unicode BOM prefix) and
-`---fuck_you----` (80, #12). `1234` nearly tied `123456` (302 vs 304). See FINDINGS.md.
+Latest pull (Jul 9): same shape. The ELF echo injector (F10) still owns the command
+count (6.60M echo commands out of 6.64M total, 99.5%). `1234` has now overtaken
+`123456` (373 vs 363). The two hostile passwords from last month held on:
+`﻿------fuck------` (242, #5, Unicode BOM prefix) and `---fuck_you----` (111, #8).
+See FINDINGS.md.
 
 Top passwords: `admin`, `123456`, `1234`, `\ufeff------fuck------`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
 
@@ -36,7 +37,9 @@ dataset: dates like `19870825` mixed with romanized names.
 
 **2. Diicot / GPU miner** -- ~180 sessions. Checks GPU via `lspci` and `nvidia-smi`,
 locks `authorized_keys` with `chattr -i` (immutable even to root), kills competing
-miners. The fake Tesla T4 in the lspci output triggered the full deployment.
+miners. The fake Tesla T4 in the lspci output triggered the full deployment. Payload
+fetched from `http://103.160.59.94:28816/CZRmrtxnrNONBXhwfFeqjNfBrliNaShG`, saved
+as `~/.sysmonitor`.
 
 **3. SCP dropper** -- tried 11 directories looking for a writable path via `scp -t`.
 The honeypot speaks the SCP wire protocol so the bot thought it succeeded.
@@ -44,11 +47,12 @@ The honeypot speaks the SCP wire protocol so the bot thought it succeeded.
 **4. Password changer** -- changes root password to `chpasswd` to lock out other
 attackers. Classic competitive exclusion.
 
-**5. C2 dropper (fileless)** -- `auth_ok` hex beacon + `wget|sh` pipeline. Nothing
+**5. C2 dropper (fileless)** -- `auth_ok` hex beacon + `wget|sh` pipeline from `https://14.46.136.77/sh`. Nothing
 written to disk. Runs via SSH exec channel, invisible to shell-based logging.
 
 **6. w.sh / astats persistence bot** -- cron AND systemd user service simultaneously.
 Process names (`astats`, `netai`, `kstats`) disguised as monitoring tools.
+Dropper fetched from `http://91.239.211.89/init.sh` (tries /tmp, /var/tmp, /dev/shm).
 
 **7. VPS infrastructure scout** -- 35 commands, no payload. Includes a `dd` disk
 benchmark to assess mining suitability before deciding to deploy.
@@ -76,12 +80,15 @@ I still need to properly analyse them - planning to use Ghidra learn it first bu
 **11. Meow dropper** -- downloads `meow` (x86-64) and `meowarm64` (ARM64) from C2,
 creates two backdoor sudo users (`admin1`, `user1`) with password `modzmodz`, writes
 a root credential to `/tmp/mew`. Entire kill chain in one exec command. 113 sessions,
-three C2 IPs now (34.11.111.237, 35.237.91.38, 34.181.210.37).
+three C2 IPs now (34.11.111.237, 35.237.91.38, 34.181.210.37). Also injects an SSH key
+via `http://197.255.229.88:1987/kon` and fetches a secondary payload from
+`http://197.255.229.88:1987/fav.ico` using a curl/wget/python/perl/tcp fallback chain.
 Binary analysis pending.
 
-**12. Wowo dropper** -- downloads and executes `runningaway.x86` from `wowo.biz.id`,
-passes a campaign tag (`vipies`) as argument, self-deletes, wipes history. Preceded by
-a full 35-command infrastructure recon. Haven't analysed the binary yet.
+**12. Wowo dropper** -- downloads and executes `runningaway.x86` from
+`http://wowo.biz.id/wowiloveyou/runningaway.x86`, passes a campaign tag (`vipies`) as
+argument, self-deletes, wipes history. Preceded by a full 35-command infrastructure recon.
+Haven't analysed the binary yet.
 
 **13. Raspberry Pi SSH worm (gJw27HGL)** -- first payload actually captured by the
 quarantine. A 4.7KB bash script, not a binary. Kills competing malware, injects an SSH
