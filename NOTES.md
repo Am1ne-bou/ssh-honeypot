@@ -503,4 +503,15 @@ Decision reasons, findings, bugs. Tagged-bullet format.
 - fix: pull_and_analyse.sh derived paths from a stale $HOME/honeypot/... ANALYZE_SH, so --quick had never actually run; repointed QUICKREPORT to the script's own dir via BASH_SOURCE
 - did(docs): updated FINDINGS.md + README.md stats to 1057h, added the Jun26->Jul9 delta table, reconciled the family count to 15, refreshed the README latest-pull paragraph
 - did: reformatted this whole NOTES.md to the tagged-bullet format (daedalus style) 
+- todo: change teh other scripts to be like quick-memroy to handle big files 
+
+## 2026-07-16 pull -- 1227h, single-IP root brute spike
+
+- result(stats, 1227.3h, 2026-07-16.merged): 74268 auth attempts, 2161 source IPs, 71480 sessions accepted, 7758177 commands, 30596 unique passwords
+- result(delta Jul 9 -> Jul 16): auth +35753, IPs +149, sessions +35753, commands +1117603, passwords +11610
+- cause: the whole jump is one IP on one day -- 2026-07-14 had 34008 auth attempts vs ~200-360 every other day; every other counter moved with it
+- ioc: 165.227.238.235 (DigitalOcean range) -- 33825 attempts, all user=root, 01:00-09:00 UTC (02:00-10:00 Rabat), ~1.2/sec sustained 8h, 22320 unique passwords; a big root-focused wordlist spray, never dropped to a shell so ~0 commands added
+- note: first time the top-line numbers nearly doubled off a single host -- makes me want a per-IP dominance line in the report so a spike like this doesn't quietly inflate the totals and make the dataset look busier than it is
+- result: F10 ELF echo injector still the only real command driver -- echo is 99.5% of all commands and 99.5% of every recent day (~150-320k/day); no single mega-session this window, just steady daily dumps
+- fix(draft): first pass of the FINDINGS bullets was wrong twice -- called it "existing infrastructure hammering harder" (it's one new IP) and "not F10/echo, auth churn" (commands are still 99.5% F10); caught both on the verify pass, rewrote
 

@@ -17,6 +17,8 @@ honeypot_stix_*.json
 unique_patterns.json
 families.json
 clusters_report.md
+family_mapping.json
+c01_decision_brief.md
 
 tmp-*
 verify-t*.txt

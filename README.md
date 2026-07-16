@@ -16,18 +16,17 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (1057+ hours, Helsinki VPS)
+## findings (1227+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-38515 auth attempts from 2012 source IPs. 35727 sessions accepted. 15 attack families identified.
+74268 auth attempts from 2161 source IPs. 71480 sessions accepted. 15 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Jul 9): same shape. The ELF echo injector (F10) still owns the command
-count (6.60M echo commands out of 6.64M total, 99.5%). `1234` has now overtaken
-`123456` (373 vs 363). The two hostile passwords from last month held on:
-`﻿------fuck------` (242, #5, Unicode BOM prefix) and `---fuck_you----` (111, #8).
-See FINDINGS.md.
+Latest pull (Jul 16): auth attempts and sessions nearly doubled in ~170h (+35753 each),
+but it's almost all one IP -- `165.227.238.235` ran 33825 root brute-force attempts on
+Jul 14 alone (22320 unique passwords, ~1.2/sec for 8h). Commands crossed 7.76M, still
+99.5% ELF echo injector (F10). See FINDINGS.md.
 
 Top passwords: `admin`, `123456`, `1234`, `\ufeff------fuck------`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
 

@@ -1,20 +1,47 @@
-# Findings - 1057h on a public VPS
+# Findings - 1227h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-07-09 13:31 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-07-16 14:53 UTC.
 
 ```
-38515 auth attempts
- 2012 unique source IPs
-18986 unique passwords tried
-35727 sessions accepted
-6640574 commands captured
+74268 auth attempts
+ 2161 unique source IPs
+30596 unique passwords tried
+71480 sessions accepted
+7758177 commands captured
    15 attack families identified
 ```
 
-*(Previous snapshot: 749h, 25339 attempts, 1516 IPs, 22551 sessions, 4298306 commands -- 2026-06-26)*
+*(Previous snapshot: 1057h, 38515 attempts, 2012 IPs, 35727 sessions, 6640574 commands -- 2026-07-09)*
 
-## What changed Jun 26 -> Jul 9 (latest pull)
+## What changed Jul 9 -> Jul 16 (latest pull)
+
+```
+                    Jul 9       Jul 16      delta
+auth attempts        38515      74268      +35753
+unique source IPs     2012       2161        +149
+sessions accepted    35727      71480      +35753
+commands captured  6640574    7758177    +1117603
+unique passwords     18986      30596      +11610
+```
+
+- **The whole jump is one IP on one day.** 2026-07-14 logged 34008 auth attempts vs
+  ~200-360 on every other day. A single new host, `165.227.238.235` (DigitalOcean range),
+  ran 33825 of them -- all `user=root`, 01:00-09:00 UTC, ~1.2/sec sustained for 8h. That
+  one run is essentially the entire +35753 in both attempts and sessions (they move
+  together at threshold 1). Source IPs only +149 because it's one IP adding huge volume,
+  not a broad new wave.
+
+- **That IP also drove the password jump.** +11610 unique passwords over the window;
+  `165.227.238.235` alone tried 22320 unique passwords -- a large root-focused wordlist
+  spray. It did not stop to run a shell, so it added almost nothing to the command count.
+
+- **Commands +1.12M, still all F10.** The ELF echo injector remains the sole command
+  driver -- echo is 99.5% of all commands and 99.5% of every recent day (~150-320k
+  commands/day). No single mega-session this window; the growth is F10 running steadily
+  across days, not one long dump.
+
+## What changed Jun 26 -> Jul 9
 
 ```
                     Jun 26      Jul 9       delta
