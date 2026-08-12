@@ -1,20 +1,75 @@
-# Findings - 1227h on a public VPS
+# Findings - 1546h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-07-16 14:53 UTC.
+Data: 2026-05-26 11:37 UTC to 2026-07-29 21:11 UTC.
 
 ```
-74268 auth attempts
- 2161 unique source IPs
-30596 unique passwords tried
-71480 sessions accepted
-7758177 commands captured
-   15 attack families identified
+  105980 auth attempts
+    2397 unique source IPs
+   41301 unique passwords tried
+  103192 sessions accepted
+10558841 commands captured
+      15 attack families identified
 ```
 
-*(Previous snapshot: 1057h, 38515 attempts, 2012 IPs, 35727 sessions, 6640574 commands -- 2026-07-09)*
+*(Previous snapshot: 1484h, 97463 attempts, 2356 IPs, 94675 sessions, 9772217 commands -- 2026-07-27)*
 
-## What changed Jul 9 -> Jul 16 (latest pull)
+## What changed Jul 19 -> Jul 27
+
+```
+                    Jul 19      Jul 27      delta
+auth attempts        94548      97463       +2915
+unique source IPs     2218       2356        +138
+sessions accepted    91760      94675       +2915
+commands captured  8321833    9772217     +1450384
+unique passwords     38533      40161       +1628
+```
+
+- **Quiet window this time -- no single-IP spike.** +2915 auth attempts and sessions in
+  ~180h, spread at baseline (~360/day). Unlike Jul 14 and Jul 18, no single host ran a
+  mega root-brute this window; the all-time top sprayers (`165.227.238.235`,
+  `161.97.166.185`) are carry-over from earlier windows, not new activity. Unique IPs +138.
+
+- **Commands +1.45M, still all F10.** The ELF echo injector remains the sole command driver
+  -- echo stays ~99.5% of all commands. No mega-session this window; F10 just keeps dumping
+  steadily across days. Commands crossed 9.77M.
+
+- **SSHCHK is now the #1 family by sessions.** 57975 sessions -- 63% of every accepted
+  session. It's the math-proof-of-work token bot (BEGIN/END handshake), and it lines up
+  exactly with the 57660 `echo -e "\x6F\x6B"` ok-beacons. Worth stressing: the
+  command-count view (99.5% echo) hides this completely, because SSHCHK is a handful of
+  commands per session while F10 is 40k echo chunks per session. Families-by-session is the
+  truer picture of *who's knocking* -- and by that measure F10 is only 201 sessions.
+  Command volume and session volume tell two different stories; I need both on the report.
+
+- **Coordinated Postgres spray.** Two credentials show up sprayed across many IPs in a
+  tight window: `postgres / e3@HJgr=$4in-a-` from 57 IPs in 59 min, and
+  `postgres / postgres` from 51 IPs in 58 min. 50+ distinct hosts hitting the *same*
+  credential inside an hour is botnet coordination, not independent scanners -- a
+  Postgres-targeted campaign running through shared infrastructure. Distinct from the root
+  brute noise.
+
+- **89% Go banner, 87% root.** `SSH-2.0-Go` is 84382 / 94548 of attempts, `user=root` is
+  82170 / 94548. Almost nothing here is human-interactive -- it's automated Go-based mass
+  scanners aimed at root. That ratio has held all three windows.
+
+- **Payloads: nothing new of substance.** 33 `scp payload saved` events, 4 distinct
+  sha256. Three are known -- the SCP-dropper worm (`6d1fe6ab...`, 18x, 4745B random names)
+  and the two F14 capability probes (`e374a7ad...` 512B, `f74a8b06...` 348B). One new
+  27-byte hash (`751debd4...`, 1x) -- single occurrence, almost certainly a test probe, not
+  triaged (files weren't in this pull, only the logged hashes).
+
+- **The dataset has plateaued structurally.** +77h, +20k attempts, +564k commands, but zero
+  new families, same four echo targets (`/tmp/amd64|kal64|linux|kswpad`), same
+  systemd+cron persistence playbooks. What's growing is volume, not novelty. That's itself
+  the finding for this window.
+
+- **Action item for the tooling:** both single-IP spikes (Jul 14, Jul 18) would've been
+  obvious instantly with a per-IP dominance line in report.py -- "top IP = X% of all
+  attempts". Without it a lone sprayer quietly doubles the totals and makes the dataset look
+  busier than it is. Build it before the next pull.
+
+## What changed Jul 9 -> Jul 16
 
 ```
                     Jul 9       Jul 16      delta

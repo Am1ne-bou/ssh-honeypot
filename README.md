@@ -16,17 +16,24 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (1227+ hours, Helsinki VPS)
+## findings (1546+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-74268 auth attempts from 2161 source IPs. 71480 sessions accepted. 15 attack families identified.
+105980 auth attempts from 2397 source IPs. 103192 sessions accepted. 15 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Jul 16): auth attempts and sessions nearly doubled in ~170h (+35753 each),
-but it's almost all one IP -- `165.227.238.235` ran 33825 root brute-force attempts on
-Jul 14 alone (22320 unique passwords, ~1.2/sec for 8h). Commands crossed 7.76M, still
-99.5% ELF echo injector (F10). See FINDINGS.md.
+Latest pull (Jul 27): +2915 attempts and sessions in ~180h, this time spread at baseline --
+no single-IP mega-spike (unlike Jul 14 and Jul 18). The all-time top sprayers
+(`165.227.238.235`, `161.97.166.185`) are carry-over, not new activity; +138 unique IPs.
+Commands crossed 9.77M, still 99.5% ELF echo injector (F10). See FINDINGS.md.
+
+Two things worth separating: 87% of attempts target `user=root` and 89% carry the
+`SSH-2.0-Go` banner -- this is almost entirely automated Go scanners aimed at root.
+And command volume lies -- F10 is 99.5% of *commands* but only 201 sessions, while
+**SSHCHK is 57975 sessions (63% of all accepts)** and is the real dominant behavior.
+Also live: a coordinated Postgres spray, 57 and 51 distinct IPs hitting the same
+`postgres` credential inside an hour -- botnet coordination, not lone scanners.
 
 Top passwords: `admin`, `123456`, `1234`, `\ufeff------fuck------`, `support`, `password`, `e3@HJgr=$4in-a-`, `postgres`, `alpine`.
 
