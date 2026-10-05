@@ -95,10 +95,9 @@ def fmt_ts(ts):
     dt = parse_ts(ts)
     if not dt:
         return "?"
-    # convert to Rabat time (UTC+1)
-    from datetime import timedelta
-    rabat = dt + timedelta(hours=1)
-    return rabat.strftime("%Y-%m-%d %H:%M") + " Rabat"
+    # convert to Bordeaux time (Europe/Paris -- handles CEST/CET automatically)
+    from zoneinfo import ZoneInfo
+    return dt.astimezone(ZoneInfo("Europe/Paris")).strftime("%Y-%m-%d %H:%M") + " Bordeaux"
 
 def fmt_duration(t0, t1):
     dt0 = parse_ts(t0)
