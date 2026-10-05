@@ -162,6 +162,20 @@ capability scanner doing `command -v` sweeps for docker/gcc/mysql/redis; and
 `handshakebins.sh`, which tries five fetch methods including TFTP twice and then runs
 `rm -rf *`.
 
+**23. astats/kstats rival-killer** -- probes for passwordless `sudo`, then kills the
+`astats`/`kstats` processes and `find`-deletes their binaries and lock file -- all of which
+belong to family 6, the w.sh persistence bot. The first family in the dataset that attacks
+another bot instead of the box: turf-clearing, not infection. 11 sessions, 8 IPs, mid-September.
+
+**24. paramiko host-profiler** -- a read-only inventory pass over `paramiko`: OS,
+`passwd`/`bash`/`sudo` presence, `auth.log`, established connections on port 22, plus a ping
+to a deliberately misspelled `goole.com` that should never resolve -- a canary for sandboxes
+that fake DNS. Reads the box and leaves, no payload. 7 sessions, 3 IPs.
+
+**25. paramiko capability probe** -- four lines: distro, core count, RAM, and whether it has
+passwordless `sudo`. Same `paramiko` fingerprint and read-only stance as family 24, stripped
+to a first-pass triage. 6 sessions, 2 IPs.
+
 ---
 
 ## architecture
